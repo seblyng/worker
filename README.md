@@ -12,14 +12,14 @@ zombie processes wont happen, so use at your own risk :)
 ## Install
 
 ```sh
-cargo install --git https://github.com/seblj/worker
+cargo install --git https://github.com/seblyng/worker
 ```
 
 ## Setup
 
 To setup, create a `.worker.toml` in the root of where the projects are
 located. For example, for one of my projects
-[foodie](`https://github.com/seblj/foodie`), a config file can look like this.
+[foodie](`https://github.com/seblyng/foodie`), a config file can look like this.
 
 NOTE: To get the logs, I am piping stderr and stdout to a file, and a lot of
 programs are suppressing ansi color codes when it is not a TTY. Because of

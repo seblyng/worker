@@ -109,7 +109,7 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
                         let parts = shlex::split(&project.command)
                             .context(format!("Couldn't parse command: {}", project.command))?;
 
-                        std::process::Command::new(&parts[0])
+                        let _ = std::process::Command::new(&parts[0])
                             .args(&parts[1..])
                             .envs(project.envs.unwrap_or_default())
                             .current_dir(project.cwd)
