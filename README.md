@@ -51,12 +51,13 @@ group = [ "foodie" ]
 Usage: worker <COMMAND>
 
 Commands:
-  start    Starts the specified project(s). E.g. `worker start foo bar`
-  stop     Stops the specified project(s). E.g. `worker stop foo bar`
-  restart  Restarts the specified project(s). E.g. `worker restart foo bar` (Same as running stop and then start)
-  logs     Print out logs for the specified project. Additionally accepts `-f` to follow the log. E.g. `worker logs foo`
-  status   Prints out a status of which projects is running. Accepts no additional flags or project(s)
-  list     Prints out a list of available projects to run
+  start    Start the specified project(s). E.g. `worker start foo bar`
+  stop     Stop the specified project(s). E.g. `worker stop foo bar`
+  restart  Restart the specified project(s). E.g. `worker restart foo bar` (Same as running stop and then start)
+  logs     Print out logs for the specified project
+  status   Print out a status of which projects is running
+  list     Print out a list of available projects to run
+  run      Runs the project in the foreground
   help     Print this message or the help of the given subcommand(s)
 
 Options:
