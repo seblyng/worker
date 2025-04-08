@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use clap::{command, Parser};
 use config::{Project, WorkerConfig};
 use itertools::Itertools;
@@ -106,11 +106,9 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
                             .open(config.log_file(&project))?
                             .into_raw_fd();
 
-                        let parts = shlex::split(&project.command)
-                            .context(format!("Couldn't parse command: {}", project.command))?;
-
-                        let _ = std::process::Command::new(&parts[0])
-                            .args(&parts[1..])
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(&project.command)
                             .envs(project.envs.unwrap_or_default())
                             .current_dir(project.cwd)
                             .stdout(unsafe { Stdio::from_raw_fd(fd) })
@@ -127,11 +125,9 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
 }
 
 fn run(project: Project) -> Result<(), anyhow::Error> {
-    let parts = shlex::split(&project.command)
-        .context(format!("Couldn't parse command: {}", project.command))?;
-
-    let _ = std::process::Command::new(&parts[0])
-        .args(&parts[1..])
+    let _ = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&project.command)
         .envs(project.envs.unwrap_or_default())
         .current_dir(project.cwd)
         .stdin(Stdio::null())

@@ -190,6 +190,10 @@ impl WorkerTestConfig {
         }
         .collect::<Vec<_>>();
 
+        // HACK: Seems like I unfortunately need to sleep a bit here to make the tests less flaky
+        // Seems like they need some time before they are recognized as processes.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
         System::new_all()
             .processes()
             .values()
