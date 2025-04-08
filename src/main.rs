@@ -126,6 +126,23 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
     Ok(())
 }
 
+fn run(project: Project) -> Result<(), anyhow::Error> {
+    let parts = shlex::split(&project.command)
+        .context(format!("Couldn't parse command: {}", project.command))?;
+
+    let _ = std::process::Command::new(&parts[0])
+        .args(&parts[1..])
+        .envs(project.envs.unwrap_or_default())
+        .current_dir(project.cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()?
+        .wait();
+
+    Ok(())
+}
+
 fn restart(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
     let (projects, filtered) = config.partition_projects(projects)?;
     let projects: Vec<Project> = projects.into_iter().map(|p| p.into()).collect();
@@ -164,6 +181,11 @@ struct ActionArgs {
 }
 
 #[derive(Debug, Parser)]
+struct RunArgs {
+    project: Project,
+}
+
+#[derive(Debug, Parser)]
 struct LogsArgs {
     project: Project,
     #[arg(short, long)]
@@ -199,6 +221,8 @@ enum SubCommands {
     Status(StatusArgs),
     /// Print out a list of available projects to run
     List(ListArgs),
+    /// Runs the project in the foreground
+    Run(RunArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -230,6 +254,7 @@ fn main() -> Result<(), anyhow::Error> {
         SubCommands::Logs(args) => logs(&config, args)?,
         SubCommands::Status(args) => status(&config, args)?,
         SubCommands::List(args) => list(&config, args)?,
+        SubCommands::Run(args) => run(args.project)?,
     }
 
     Ok(())

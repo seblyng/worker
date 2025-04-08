@@ -11,6 +11,7 @@ pub enum WorkerTestProject {
     One,
     Two,
     Three,
+    Four,
     GroupOne,
     GroupTwo,
     Unknown,
@@ -52,7 +53,7 @@ impl WorkerTestConfig {
         let cmd1 = format!("{} {}", mock_path, name1);
         let cmd2 = format!("{} {}", mock_path, name2);
         let cmd3 = format!("{} {}", mock_path, name3);
-        let cmd4 = format!("{} {}", mock_path, name4);
+        let cmd4 = "echo 'Hello from test!'".to_string();
 
         // Create the .worker.toml file
         std::fs::write(
@@ -94,7 +95,7 @@ impl WorkerTestConfig {
         }
     }
 
-    fn run(&self, command: &str, projects: Option<&[WorkerTestProject]>) -> Command {
+    fn run_cmd(&self, command: &str, projects: Option<&[WorkerTestProject]>) -> Command {
         let mut cmd = Command::cargo_bin("worker").unwrap();
         cmd.current_dir(&self.dir).arg(command);
 
@@ -110,27 +111,31 @@ impl WorkerTestConfig {
     }
 
     pub fn start(&self, projects: &[WorkerTestProject]) -> Command {
-        self.run("start", Some(projects))
+        self.run_cmd("start", Some(projects))
     }
 
     pub fn logs(&self, project: WorkerTestProject) -> Command {
-        self.run("logs", Some(&[project]))
+        self.run_cmd("logs", Some(&[project]))
+    }
+
+    pub fn run(&self, project: WorkerTestProject) -> Command {
+        self.run_cmd("run", Some(&[project]))
     }
 
     pub fn restart(&self, projects: &[WorkerTestProject]) -> Command {
-        self.run("restart", Some(projects))
+        self.run_cmd("restart", Some(projects))
     }
 
     pub fn stop(&self, projects: &[WorkerTestProject]) -> Command {
-        self.run("stop", Some(projects))
+        self.run_cmd("stop", Some(projects))
     }
 
     pub fn list(&self) -> Command {
-        self.run("list", None)
+        self.run_cmd("list", None)
     }
 
     pub fn status(&self) -> Command {
-        self.run("status", None)
+        self.run_cmd("status", None)
     }
 
     // Depends on `new()`. Used for asserting that the projects have actually started
@@ -141,6 +146,7 @@ impl WorkerTestConfig {
             WorkerTestProject::One => unreachable!(),
             WorkerTestProject::Two => unreachable!(),
             WorkerTestProject::Three => unreachable!(),
+            WorkerTestProject::Four => unreachable!(),
             WorkerTestProject::Unknown => unreachable!(),
         }
     }
@@ -164,6 +170,7 @@ impl WorkerTestConfig {
             WorkerTestProject::One => self.names[0].to_string(),
             WorkerTestProject::Two => self.names[1].to_string(),
             WorkerTestProject::Three => self.names[2].to_string(),
+            WorkerTestProject::Four => self.names[3].to_string(),
             WorkerTestProject::Unknown => "unknown".into(),
             WorkerTestProject::GroupOne => self.groups[0].to_string(),
             WorkerTestProject::GroupTwo => self.groups[1].to_string(),
@@ -176,6 +183,7 @@ impl WorkerTestConfig {
             WorkerTestProject::One => self.cmds[0].split_whitespace(),
             WorkerTestProject::Two => self.cmds[1].split_whitespace(),
             WorkerTestProject::Three => self.cmds[2].split_whitespace(),
+            WorkerTestProject::Four => self.cmds[3].split_whitespace(),
             WorkerTestProject::Unknown => unreachable!(),
             WorkerTestProject::GroupOne => unreachable!(),
             WorkerTestProject::GroupTwo => unreachable!(),
