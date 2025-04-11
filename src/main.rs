@@ -19,7 +19,7 @@ pub mod config;
 pub mod libc;
 
 fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
-    if !config.is_running(&args.project)? {
+    if !args.project.is_running(config)? {
         return Err(anyhow!("{} is not running", args.project));
     }
 
@@ -152,12 +152,8 @@ fn start_dependencies(config: &WorkerConfig, deps: &[String]) -> Result<(), anyh
     let dependencies = deps
         .iter()
         .filter_map(|it| {
-            let p = Project::from_str(it).ok()?;
-            if !config.is_running(&p).ok()? {
-                Some(p)
-            } else {
-                None
-            }
+            let project = Project::from_str(it).ok()?;
+            (!project.is_running(config).ok()?).then_some(project)
         })
         .collect::<Vec<Project>>();
 

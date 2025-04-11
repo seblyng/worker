@@ -47,6 +47,12 @@ pub struct RunningProject {
     pub pid: i32,
 }
 
+impl Project {
+    pub fn is_running(&self, config: &WorkerConfig) -> Result<bool, anyhow::Error> {
+        Ok(config.running()?.iter().any(|it| it.name == self.name))
+    }
+}
+
 impl Hash for Project {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state)
@@ -225,10 +231,6 @@ impl WorkerConfig {
         serde_json::to_writer(file, &project).expect("Couldn't write to state file");
 
         Ok(())
-    }
-
-    pub fn is_running(&self, project: &Project) -> Result<bool, anyhow::Error> {
-        Ok(self.running()?.iter().any(|it| it.name == project.name))
     }
 
     // Try to get vec of running projects. Try to remove the state file if the process is not running
