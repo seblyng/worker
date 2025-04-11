@@ -12,6 +12,8 @@ pub enum WorkerTestProject {
     Two,
     Three,
     Four,
+    Five,
+    Six,
     GroupOne,
     GroupTwo,
     Unknown,
@@ -25,8 +27,8 @@ pub enum WorkerTestGroup {
 
 pub struct WorkerTestConfig {
     dir: TempDir,
-    cmds: [String; 4],
-    names: [Uuid; 4],
+    cmds: [String; 6],
+    names: [Uuid; 6],
     groups: [Uuid; 2],
 }
 
@@ -46,6 +48,8 @@ impl WorkerTestConfig {
         let name2 = Uuid::new_v4();
         let name3 = Uuid::new_v4();
         let name4 = Uuid::new_v4();
+        let name5 = Uuid::new_v4();
+        let name6 = Uuid::new_v4();
 
         let group1 = Uuid::new_v4();
         let group2 = Uuid::new_v4();
@@ -53,7 +57,8 @@ impl WorkerTestConfig {
         let cmd1 = format!("{} {}", mock_path, name1);
         let cmd2 = format!("{} {}", mock_path, name2);
         let cmd3 = format!("{} {}", mock_path, name3);
-        let cmd4 = "echo 'Hello from test!'".to_string();
+        let cmd4 = format!("{} {}", mock_path, name5);
+        let cmd_echo = "echo 'Hello from test!'".to_string();
 
         // Create the .worker.toml file
         std::fs::write(
@@ -80,8 +85,20 @@ impl WorkerTestConfig {
 
             [[project]]
             name = "{name4}"
+            command = "{cmd_echo}"
+            cwd = "/"
+
+            [[project]]
+            name = "{name5}"
             command = "{cmd4}"
             cwd = "/"
+            dependencies = [ "{name1}", "{name2}" ]
+
+            [[project]]
+            name = "{name6}"
+            command = "{cmd_echo}"
+            cwd = "/"
+            dependencies = [ "{name1}", "{name2}" ]
             "#
             ),
         )
@@ -89,8 +106,8 @@ impl WorkerTestConfig {
 
         WorkerTestConfig {
             dir,
-            cmds: [cmd1, cmd2, cmd3, cmd4],
-            names: [name1, name2, name3, name4],
+            cmds: [cmd1, cmd2, cmd3, cmd_echo.clone(), cmd4, cmd_echo],
+            names: [name1, name2, name3, name4, name5, name6],
             groups: [group1, group2],
         }
     }
@@ -147,6 +164,8 @@ impl WorkerTestConfig {
             WorkerTestProject::Two => unreachable!(),
             WorkerTestProject::Three => unreachable!(),
             WorkerTestProject::Four => unreachable!(),
+            WorkerTestProject::Five => unreachable!(),
+            WorkerTestProject::Six => unreachable!(),
             WorkerTestProject::Unknown => unreachable!(),
         }
     }
@@ -171,6 +190,8 @@ impl WorkerTestConfig {
             WorkerTestProject::Two => self.names[1].to_string(),
             WorkerTestProject::Three => self.names[2].to_string(),
             WorkerTestProject::Four => self.names[3].to_string(),
+            WorkerTestProject::Five => self.names[4].to_string(),
+            WorkerTestProject::Six => self.names[5].to_string(),
             WorkerTestProject::Unknown => "unknown".into(),
             WorkerTestProject::GroupOne => self.groups[0].to_string(),
             WorkerTestProject::GroupTwo => self.groups[1].to_string(),
@@ -184,6 +205,8 @@ impl WorkerTestConfig {
             WorkerTestProject::Two => self.cmds[1].split_whitespace(),
             WorkerTestProject::Three => self.cmds[2].split_whitespace(),
             WorkerTestProject::Four => self.cmds[3].split_whitespace(),
+            WorkerTestProject::Five => self.cmds[4].split_whitespace(),
+            WorkerTestProject::Six => self.cmds[5].split_whitespace(),
             WorkerTestProject::Unknown => unreachable!(),
             WorkerTestProject::GroupOne => unreachable!(),
             WorkerTestProject::GroupTwo => unreachable!(),

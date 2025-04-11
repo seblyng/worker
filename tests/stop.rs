@@ -182,3 +182,23 @@ fn test_stop_groups_and_project_success() {
     assert_eq!(worker.pids(projects1[1]).len(), 0);
     assert_eq!(worker.pids(project3).len(), 0);
 }
+
+#[test]
+fn test_stop_not_stop_dependencies() {
+    let worker = WorkerTestConfig::new();
+    let project = WorkerTestProject::Five;
+    let dep1 = WorkerTestProject::One;
+    let dep2 = WorkerTestProject::Two;
+
+    // Start the project
+    let mut cmd = worker.start(&[project]);
+    cmd.assert().success();
+
+    let mut cmd = worker.stop(&[project]);
+    cmd.assert().success();
+
+    // Verify that the state file exists
+    assert_eq!(worker.pids(project).len(), 0);
+    assert_eq!(worker.pids(dep1).len(), 1);
+    assert_eq!(worker.pids(dep2).len(), 1);
+}

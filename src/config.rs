@@ -30,6 +30,7 @@ pub struct Project {
     pub stop_signal: Option<Signal>,
     pub envs: Option<HashMap<String, String>>,
     pub group: Option<Vec<String>>,
+    pub dependencies: Option<Vec<String>>,
 }
 
 /// Project with process id
@@ -42,6 +43,7 @@ pub struct RunningProject {
     pub stop_signal: Option<Signal>,
     pub envs: Option<HashMap<String, String>>,
     pub group: Option<Vec<String>>,
+    pub dependencies: Option<Vec<String>>,
     pub pid: i32,
 }
 
@@ -102,6 +104,7 @@ impl From<RunningProject> for Project {
             stop_signal: value.stop_signal,
             envs: value.envs,
             group: value.group,
+            dependencies: value.dependencies,
         }
     }
 }
@@ -171,6 +174,7 @@ impl FromStr for RunningProject {
             envs: project.envs,
             group: project.group,
             pid: pid.parse().context("Couldn't parse pid")?,
+            dependencies: project.dependencies,
         })
     }
 }

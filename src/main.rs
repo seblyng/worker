@@ -5,6 +5,7 @@ use std::{
         unix::process::CommandExt,
     },
     process::Stdio,
+    str::FromStr,
     time::{Duration, Instant},
 };
 
@@ -87,6 +88,10 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
     }
 
     for project in not_running {
+        if let Some(ref deps) = project.dependencies {
+            start_dependencies(config, deps)?;
+        }
+
         match fork().expect("Couldn't fork") {
             Fork::Parent(p) => {
                 waitpid(p).unwrap();
@@ -124,7 +129,11 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
     Ok(())
 }
 
-fn run(project: Project) -> Result<(), anyhow::Error> {
+fn run(config: &WorkerConfig, project: Project) -> Result<(), anyhow::Error> {
+    if let Some(ref deps) = project.dependencies {
+        start_dependencies(config, deps)?;
+    }
+
     let _ = std::process::Command::new("sh")
         .arg("-c")
         .arg(&project.command)
@@ -137,6 +146,22 @@ fn run(project: Project) -> Result<(), anyhow::Error> {
         .wait();
 
     Ok(())
+}
+
+fn start_dependencies(config: &WorkerConfig, deps: &[String]) -> Result<(), anyhow::Error> {
+    let dependencies = deps
+        .iter()
+        .filter_map(|it| {
+            let p = Project::from_str(it).ok()?;
+            if !config.is_running(&p).ok()? {
+                Some(p)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<Project>>();
+
+    start(config, dependencies)
 }
 
 fn restart(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
@@ -250,7 +275,7 @@ fn main() -> Result<(), anyhow::Error> {
         SubCommands::Logs(args) => logs(&config, args)?,
         SubCommands::Status(args) => status(&config, args)?,
         SubCommands::List(args) => list(&config, args)?,
-        SubCommands::Run(args) => run(args.project)?,
+        SubCommands::Run(args) => run(&config, args.project)?,
     }
 
     Ok(())

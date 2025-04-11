@@ -171,3 +171,30 @@ fn test_restart_group_one_project_running() {
     assert!(worker.state_file(projects[1]).is_none());
     assert_eq!(worker.pids(projects[1]).len(), 0);
 }
+
+#[test]
+fn test_restart_not_restarting_dependencies() {
+    let worker = WorkerTestConfig::new();
+    let project = WorkerTestProject::Five;
+
+    let dep1 = WorkerTestProject::One;
+    let dep2 = WorkerTestProject::Two;
+
+    let mut cmd = worker.start(&[project, project]);
+    cmd.assert().success();
+
+    let pid = worker.pids(project)[0];
+    let pid1 = worker.pids(dep1)[0];
+    let pid2 = worker.pids(dep2)[0];
+
+    let mut cmd = worker.restart(&[project, project]);
+    cmd.assert().success();
+
+    let new_pid = worker.pids(project)[0];
+    let new_pid1 = worker.pids(dep1)[0];
+    let new_pid2 = worker.pids(dep2)[0];
+
+    assert_ne!(pid, new_pid);
+    assert_eq!(pid1, new_pid1);
+    assert_eq!(pid2, new_pid2);
+}

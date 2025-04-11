@@ -142,3 +142,27 @@ fn test_start_multiple_groups() {
     assert_eq!(worker.pids(projects2[0]).len(), 1);
     assert_eq!(worker.pids(projects2[1]).len(), 1);
 }
+
+#[test]
+fn test_start_starts_dependencies() {
+    let worker = WorkerTestConfig::new();
+    let project = WorkerTestProject::Five;
+
+    let dep1 = WorkerTestProject::One;
+    let dep2 = WorkerTestProject::Two;
+
+    let mut cmd = worker.start(&[project]);
+    cmd.assert().success();
+
+    // Verify that the state file exists
+    assert!(worker.state_file(project).is_some());
+    assert_eq!(worker.pids(project).len(), 1);
+
+    // Verify that the state file exists
+    assert!(worker.state_file(dep1).is_some());
+    assert_eq!(worker.pids(dep1).len(), 1);
+
+    // Verify that the state file exists
+    assert!(worker.state_file(dep2).is_some());
+    assert_eq!(worker.pids(dep2).len(), 1);
+}
