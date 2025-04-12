@@ -1,0 +1,219 @@
+use std::{
+    collections::HashMap,
+    fs::OpenOptions,
+    hash::Hash,
+    os::{
+        fd::{FromRawFd, IntoRawFd},
+        unix::process::CommandExt,
+    },
+    process::Stdio,
+    str::FromStr,
+};
+
+use anyhow::{anyhow, Context};
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    config::WorkerConfig,
+    libc::{fork, setsid, stop_pg, waitpid, Fork, Signal},
+};
+
+/// Project deserialized from config file
+#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+pub struct Project {
+    pub name: String,
+    pub command: String,
+    pub cwd: String,
+    pub display: Option<String>,
+    pub stop_signal: Option<Signal>,
+    pub envs: Option<HashMap<String, String>>,
+    pub group: Option<Vec<String>>,
+    pub dependencies: Option<Vec<String>>,
+}
+
+/// Project with process id
+#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+pub struct RunningProject {
+    pub name: String,
+    pub command: String,
+    pub cwd: String,
+    pub display: Option<String>,
+    pub stop_signal: Option<Signal>,
+    pub envs: Option<HashMap<String, String>>,
+    pub group: Option<Vec<String>>,
+    pub dependencies: Option<Vec<String>>,
+    pub pid: i32,
+}
+
+impl Project {
+    pub fn start(&self, config: &WorkerConfig) -> Result<(), anyhow::Error> {
+        self.start_dependencies(config)?;
+
+        match fork().expect("Couldn't fork") {
+            Fork::Parent(p) => {
+                waitpid(p).unwrap();
+            }
+            Fork::Child => {
+                let sid = setsid().expect("Couldn't setsid");
+                config.store_state(sid, self)?;
+
+                match fork().expect("Couldn't fork inner") {
+                    Fork::Parent(_) => std::process::exit(0),
+                    Fork::Child => {
+                        // Create a raw filedescriptor to use to merge stdout and stderr
+                        let fd = OpenOptions::new()
+                            .write(true)
+                            .truncate(true)
+                            .create(true)
+                            .open(config.log_file(self))?
+                            .into_raw_fd();
+
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(&self.command)
+                            .envs(self.envs.clone().unwrap_or_default())
+                            .current_dir(&self.cwd)
+                            .stdout(unsafe { Stdio::from_raw_fd(fd) })
+                            .stderr(unsafe { Stdio::from_raw_fd(fd) })
+                            .stdin(Stdio::null())
+                            .exec();
+                    }
+                };
+            }
+        };
+
+        Ok(())
+    }
+
+    pub fn start_dependencies(&self, config: &WorkerConfig) -> Result<(), anyhow::Error> {
+        if let Some(ref deps) = self.dependencies {
+            for dep in deps {
+                let project = Project::from_str(dep)?;
+                if !project.is_running(config)? {
+                    project.start(config)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn run(&self) -> Result<(), anyhow::Error> {
+        let _ = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&self.command)
+            .envs(self.envs.clone().unwrap_or_default())
+            .current_dir(&self.cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()?
+            .wait();
+        Ok(())
+    }
+
+    pub fn is_running(&self, config: &WorkerConfig) -> Result<bool, anyhow::Error> {
+        Ok(config.running()?.iter().any(|it| it.name == self.name))
+    }
+}
+
+impl RunningProject {
+    pub fn stop(&self) -> Result<(), anyhow::Error> {
+        let signal = self.stop_signal.as_ref().unwrap_or(&Signal::SIGINT);
+        stop_pg(self.pid, signal).map_err(|_| anyhow!("Error trying to stop project"))
+    }
+}
+
+impl From<RunningProject> for Project {
+    fn from(value: RunningProject) -> Self {
+        Self {
+            name: value.name,
+            command: value.command,
+            cwd: value.cwd,
+            display: value.display,
+            stop_signal: value.stop_signal,
+            envs: value.envs,
+            group: value.group,
+            dependencies: value.dependencies,
+        }
+    }
+}
+
+pub trait WorkerProject {
+    fn name(&self) -> &str;
+}
+
+impl Hash for Project {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state)
+    }
+}
+
+macro_rules! impl_display {
+    ($project:tt) => {
+        impl std::fmt::Display for $project {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                if let Some(ref display) = self.display {
+                    write!(f, "{} ({})", display, self.name)
+                } else {
+                    write!(f, "{}", self.name)
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_worker_project {
+    ($project:tt) => {
+        impl WorkerProject for $project {
+            fn name(&self) -> &str {
+                &self.name
+            }
+        }
+    };
+}
+
+impl_display!(Project);
+impl_display!(RunningProject);
+
+impl_worker_project!(Project);
+impl_worker_project!(RunningProject);
+
+impl FromStr for Project {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        find_project(s)
+    }
+}
+
+impl FromStr for RunningProject {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (name, pid) = s.rsplit_once('-').context("No - in string")?;
+        let project = find_project(name)?;
+
+        Ok(RunningProject {
+            name: project.name,
+            command: project.command,
+            cwd: project.cwd,
+            display: project.display,
+            stop_signal: project.stop_signal,
+            envs: project.envs,
+            group: project.group,
+            pid: pid.parse().context("Couldn't parse pid")?,
+            dependencies: project.dependencies,
+        })
+    }
+}
+
+fn find_project(name: &str) -> Result<Project, anyhow::Error> {
+    let config = WorkerConfig::new()?;
+    let projects: Vec<String> = config.projects.iter().map(|p| p.name.clone()).collect();
+
+    config
+        .projects
+        .into_iter()
+        .find(|it| it.name == name)
+        .with_context(|| format!("Valid projects are {:#?}", projects))
+}

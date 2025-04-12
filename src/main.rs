@@ -1,22 +1,14 @@
-use std::{
-    fs::OpenOptions,
-    os::{
-        fd::{FromRawFd, IntoRawFd},
-        unix::process::CommandExt,
-    },
-    process::Stdio,
-    str::FromStr,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use anyhow::anyhow;
 use clap::{command, Parser};
-use config::{Project, WorkerConfig};
+use config::WorkerConfig;
 use itertools::Itertools;
-use libc::{fork, setsid, waitpid, Fork};
+use project::Project;
 
 pub mod config;
 pub mod libc;
+pub mod project;
 
 fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
     if !args.project.is_running(config)? {
@@ -88,76 +80,18 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
     }
 
     for project in not_running {
-        if let Some(ref deps) = project.dependencies {
-            start_dependencies(config, deps)?;
-        }
-
-        match fork().expect("Couldn't fork") {
-            Fork::Parent(p) => {
-                waitpid(p).unwrap();
-            }
-            Fork::Child => {
-                let sid = setsid().expect("Couldn't setsid");
-                config.store_state(sid, &project)?;
-
-                match fork().expect("Couldn't fork inner") {
-                    Fork::Parent(_) => std::process::exit(0),
-                    Fork::Child => {
-                        // Create a raw filedescriptor to use to merge stdout and stderr
-                        let fd = OpenOptions::new()
-                            .write(true)
-                            .truncate(true)
-                            .create(true)
-                            .open(config.log_file(&project))?
-                            .into_raw_fd();
-
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(&project.command)
-                            .envs(project.envs.unwrap_or_default())
-                            .current_dir(project.cwd)
-                            .stdout(unsafe { Stdio::from_raw_fd(fd) })
-                            .stderr(unsafe { Stdio::from_raw_fd(fd) })
-                            .stdin(Stdio::null())
-                            .exec();
-                    }
-                };
-            }
-        };
+        project.start(config)?;
     }
 
     Ok(())
 }
 
 fn run(config: &WorkerConfig, project: Project) -> Result<(), anyhow::Error> {
-    if let Some(ref deps) = project.dependencies {
-        start_dependencies(config, deps)?;
-    }
+    project.start_dependencies(config)?;
 
-    let _ = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(&project.command)
-        .envs(project.envs.unwrap_or_default())
-        .current_dir(project.cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()?
-        .wait();
+    project.run()?;
 
     Ok(())
-}
-
-fn start_dependencies(config: &WorkerConfig, deps: &[String]) -> Result<(), anyhow::Error> {
-    let dependencies = deps
-        .iter()
-        .filter_map(|it| {
-            let project = Project::from_str(it).ok()?;
-            (!project.is_running(config).ok()?).then_some(project)
-        })
-        .collect::<Vec<Project>>();
-
-    start(config, dependencies)
 }
 
 fn restart(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
