@@ -10,34 +10,15 @@ pub mod config;
 pub mod libc;
 pub mod project;
 
-fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
-    if !args.project.is_running(config)? {
-        return Err(anyhow!("{} is not running", args.project));
+fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
+    let (running, not_running) = config.partition_projects(projects)?;
+
+    for project in running {
+        eprintln!("{} is already running", project);
     }
 
-    let mut cmd = std::process::Command::new("tail");
-
-    if args.follow {
-        cmd.arg("-f");
-    }
-
-    let mut child = cmd
-        .args(["-n", &args.number.to_string()])
-        .arg(config.log_file(&args.project))
-        .spawn()?;
-
-    child.wait()?;
-
-    Ok(())
-}
-
-fn status(config: &WorkerConfig, args: StatusArgs) -> Result<(), anyhow::Error> {
-    for project in config.running()? {
-        if args.quiet {
-            println!("{}", project.name);
-        } else {
-            println!("{} is running", project);
-        }
+    for project in not_running {
+        project.start(config)?;
     }
 
     Ok(())
@@ -72,28 +53,6 @@ fn stop(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Err
     Ok(())
 }
 
-fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
-    let (running, not_running) = config.partition_projects(projects)?;
-
-    for project in running {
-        eprintln!("{} is already running", project);
-    }
-
-    for project in not_running {
-        project.start(config)?;
-    }
-
-    Ok(())
-}
-
-fn run(config: &WorkerConfig, project: Project) -> Result<(), anyhow::Error> {
-    project.start_dependencies(config)?;
-
-    project.run()?;
-
-    Ok(())
-}
-
 fn restart(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
     let (projects, filtered) = config.partition_projects(projects)?;
     let projects: Vec<Project> = projects.into_iter().map(|p| p.into()).collect();
@@ -108,6 +67,26 @@ fn restart(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::
     Ok(())
 }
 
+fn run(config: &WorkerConfig, project: Project) -> Result<(), anyhow::Error> {
+    project.start_dependencies(config)?;
+
+    project.run()?;
+
+    Ok(())
+}
+
+fn status(config: &WorkerConfig, args: StatusArgs) -> Result<(), anyhow::Error> {
+    for project in config.running()? {
+        if args.quiet {
+            println!("{}", project.name);
+        } else {
+            println!("{} is running", project);
+        }
+    }
+
+    Ok(())
+}
+
 fn list(config: &WorkerConfig, args: ListArgs) -> Result<(), anyhow::Error> {
     for p in config.projects.iter() {
         if args.quiet {
@@ -116,6 +95,26 @@ fn list(config: &WorkerConfig, args: ListArgs) -> Result<(), anyhow::Error> {
             println!("{}", p)
         }
     }
+
+    Ok(())
+}
+fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
+    if !args.project.is_running(config)? {
+        return Err(anyhow!("{} is not running", args.project));
+    }
+
+    let mut cmd = std::process::Command::new("tail");
+
+    if args.follow {
+        cmd.arg("-f");
+    }
+
+    let mut child = cmd
+        .args(["-n", &args.number.to_string()])
+        .arg(config.log_file(&args.project))
+        .spawn()?;
+
+    child.wait()?;
 
     Ok(())
 }
@@ -166,14 +165,14 @@ enum SubCommands {
     Stop(ActionArgs),
     /// Restart the specified project(s). E.g. `worker restart foo bar` (Same as running stop and then start)
     Restart(ActionArgs),
-    /// Print out logs for the specified project.
-    Logs(LogsArgs),
+    /// Runs the project in the foreground
+    Run(RunArgs),
     /// Print out a status of which projects is running
     Status(StatusArgs),
     /// Print out a list of available projects to run
     List(ListArgs),
-    /// Runs the project in the foreground
-    Run(RunArgs),
+    /// Print out logs for the specified project.
+    Logs(LogsArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -202,10 +201,10 @@ fn main() -> Result<(), anyhow::Error> {
         SubCommands::Start(args) => start(&config, unique(args.projects))?,
         SubCommands::Stop(args) => stop(&config, unique(args.projects))?,
         SubCommands::Restart(args) => restart(&config, unique(args.projects))?,
-        SubCommands::Logs(args) => logs(&config, args)?,
+        SubCommands::Run(args) => run(&config, args.project)?,
         SubCommands::Status(args) => status(&config, args)?,
         SubCommands::List(args) => list(&config, args)?,
-        SubCommands::Run(args) => run(&config, args.project)?,
+        SubCommands::Logs(args) => logs(&config, args)?,
     }
 
     Ok(())
