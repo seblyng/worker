@@ -116,13 +116,10 @@ fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
         .spawn()?;
 
     if args.follow {
-        loop {
-            if !args.project.is_running(config)? {
-                child.kill()?;
-                break;
-            }
+        while args.project.is_running(config)? {
             std::thread::sleep(Duration::from_secs(2));
         }
+        child.kill()?;
     } else {
         child.wait()?;
     }
