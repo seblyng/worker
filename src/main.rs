@@ -98,6 +98,7 @@ fn list(config: &WorkerConfig, args: ListArgs) -> Result<(), anyhow::Error> {
 
     Ok(())
 }
+
 fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
     if !args.project.is_running(config)? {
         return Err(anyhow!("{} is not running", args.project));
@@ -114,7 +115,17 @@ fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
         .arg(config.log_file(&args.project))
         .spawn()?;
 
-    child.wait()?;
+    if args.follow {
+        loop {
+            if !args.project.is_running(config)? {
+                child.kill()?;
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    } else {
+        child.wait()?;
+    }
 
     Ok(())
 }

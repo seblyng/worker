@@ -117,7 +117,7 @@ impl Project {
 impl RunningProject {
     pub fn stop(&self) -> Result<(), anyhow::Error> {
         let signal = self.stop_signal.as_ref().unwrap_or(&Signal::SIGINT);
-        stop_pg(self.pid, signal).map_err(|_| anyhow!("Error trying to stop project"))
+        stop_pg(self.pid, signal).map_err(|e| anyhow!("Error trying to stop project: {e}"))
     }
 }
 
