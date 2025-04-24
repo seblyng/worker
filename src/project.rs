@@ -22,7 +22,7 @@ use crate::{
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct Project {
     pub name: String,
-    pub command: String,
+    pub command: Vec<String>,
     pub cwd: String,
     pub display: Option<String>,
     pub stop_signal: Option<Signal>,
@@ -35,7 +35,7 @@ pub struct Project {
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct RunningProject {
     pub name: String,
-    pub command: String,
+    pub command: Vec<String>,
     pub cwd: String,
     pub display: Option<String>,
     pub stop_signal: Option<Signal>,
@@ -68,9 +68,8 @@ impl Project {
                             .open(config.log_file(self))?
                             .into_raw_fd();
 
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(&self.command)
+                        let _ = std::process::Command::new(&self.command[0])
+                            .args(&self.command[1..])
                             .envs(self.envs.clone().unwrap_or_default())
                             .current_dir(&self.cwd)
                             .stdout(unsafe { Stdio::from_raw_fd(fd) })
@@ -98,9 +97,8 @@ impl Project {
     }
 
     pub fn run(&self) -> Result<(), anyhow::Error> {
-        let _ = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&self.command)
+        let _ = std::process::Command::new(&self.command[0])
+            .args(&self.command[1..])
             .envs(self.envs.clone().unwrap_or_default())
             .current_dir(&self.cwd)
             .stdin(Stdio::null())

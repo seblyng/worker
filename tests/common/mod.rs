@@ -67,38 +67,38 @@ impl WorkerTestConfig {
                 r#"
             [[project]]
             name = "{name1}"
-            command = "{cmd1}"
+            command = ["{mock_path}", "{name1}"]
             cwd = "/"
-            group = [ "{group1}", "{group2}" ]
+            group = ["{group1}", "{group2}"]
 
             [[project]]
             name = "{name2}"
-            command = "{cmd2}"
+            command = ["{mock_path}", "{name2}"]
             cwd = "/"
             group = [ "{group1}" ]
 
             [[project]]
             name = "{name3}"
-            command = "{cmd3}"
+            command = ["{mock_path}", "{name3}"]
             cwd = "/"
             group = [ "{group2}" ]
 
             [[project]]
             name = "{name4}"
-            command = "{cmd_echo}"
+            command = ["sh", "-c", "{cmd_echo}"]
             cwd = "/"
 
             [[project]]
             name = "{name5}"
-            command = "{cmd4}"
+            command = ["{mock_path}", "{name5}"]
             cwd = "/"
-            dependencies = [ "{name1}", "{name2}" ]
+            dependencies = ["{name1}", "{name2}"]
 
             [[project]]
             name = "{name6}"
-            command = "{cmd_echo}"
+            command = ["sh", "-c", "{cmd_echo}"]
             cwd = "/"
-            dependencies = [ "{name1}", "{name2}" ]
+            dependencies = ["{name1}", "{name2}"]
             "#
             ),
         )
