@@ -23,7 +23,7 @@ fn test_restart_success() {
     cmd.assert().success();
 
     // Verify that the state file exists
-    assert!(worker.state_file(project).is_some());
+    assert!(worker.state_file(&project_name).is_some());
 
     let pid = worker.pids(project)[0];
 
@@ -31,7 +31,7 @@ fn test_restart_success() {
     cmd.assert().success();
 
     // Verify that the state file exists
-    assert!(worker.state_file(project).is_some());
+    assert!(worker.state_file(&project_name).is_some());
 
     let new_pid = worker.pids(project)[0];
 
@@ -84,7 +84,7 @@ fn test_restart_multiple_only_one_running() {
     assert_ne!(pid1, new_pid1);
 
     // Verify that the project that wasn't running is not started
-    assert!(worker.state_file(project2).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
     assert_eq!(worker.pids(project2).len(), 0);
 }
 
@@ -100,8 +100,11 @@ fn test_restart_group_success() {
 
     let projects = worker.group_projects(&group);
 
-    assert!(worker.state_file(projects[0]).is_some());
-    assert!(worker.state_file(projects[1]).is_some());
+    let project1_name = worker.project_name(&projects[0]);
+    let project2_name = worker.project_name(&projects[1]);
+
+    assert!(worker.state_file(&project1_name).is_some());
+    assert!(worker.state_file(&project2_name).is_some());
 
     let pid1 = worker.pids(projects[0])[0];
     let pid2 = worker.pids(projects[1])[0];
@@ -110,8 +113,8 @@ fn test_restart_group_success() {
     cmd.assert().success();
 
     // Verify that the state file exists
-    assert!(worker.state_file(projects[0]).is_some());
-    assert!(worker.state_file(projects[1]).is_some());
+    assert!(worker.state_file(&project1_name).is_some());
+    assert!(worker.state_file(&project2_name).is_some());
 
     let new_pid1 = worker.pids(projects[0])[0];
     let new_pid2 = worker.pids(projects[1])[0];
@@ -135,8 +138,13 @@ fn test_restart_multiple_group_success() {
     let projects1 = worker.group_projects(&group1);
     let projects2 = worker.group_projects(&group2);
 
-    assert!(worker.state_file(projects1[0]).is_some());
-    assert!(worker.state_file(projects1[1]).is_some());
+    let project11_name = worker.project_name(&projects1[0]);
+    let project12_name = worker.project_name(&projects1[1]);
+    let project21_name = worker.project_name(&projects2[0]);
+    let project22_name = worker.project_name(&projects2[1]);
+
+    assert!(worker.state_file(&project11_name).is_some());
+    assert!(worker.state_file(&project12_name).is_some());
 
     let pid1 = worker.pids(projects1[0])[0];
     let pid2 = worker.pids(projects1[1])[0];
@@ -147,10 +155,10 @@ fn test_restart_multiple_group_success() {
     cmd.assert().success();
 
     // Verify that the state file exists
-    assert!(worker.state_file(projects1[0]).is_some());
-    assert!(worker.state_file(projects1[0]).is_some());
-    assert!(worker.state_file(projects2[1]).is_some());
-    assert!(worker.state_file(projects2[1]).is_some());
+    assert!(worker.state_file(&project11_name).is_some());
+    assert!(worker.state_file(&project11_name).is_some());
+    assert!(worker.state_file(&project21_name).is_some());
+    assert!(worker.state_file(&project22_name).is_some());
 
     let new_pid1 = worker.pids(projects1[0])[0];
     let new_pid2 = worker.pids(projects1[1])[0];
@@ -170,6 +178,7 @@ fn test_restart_group_one_project_running() {
     let projects = worker.group_projects(&group1);
 
     let project1_name = worker.project_name(&projects[0]);
+    let project2_name = worker.project_name(&projects[1]);
     let group1_name = worker.project_name(&group1);
 
     let mut cmd = worker.start(&[&project1_name]);
@@ -181,13 +190,13 @@ fn test_restart_group_one_project_running() {
     cmd.assert().success();
 
     // Verify that the state file exists
-    assert!(worker.state_file(projects[0]).is_some());
+    assert!(worker.state_file(&project1_name).is_some());
 
     let new_pid1 = worker.pids(projects[0])[0];
     assert_ne!(pid1, new_pid1);
 
     // Verify that the project that wasn't running is not started
-    assert!(worker.state_file(projects[1]).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
     assert_eq!(worker.pids(projects[1]).len(), 0);
 }
 

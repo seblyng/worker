@@ -39,7 +39,7 @@ fn test_start_success() {
     cmd.assert().success();
 
     // Verify that the state file exists
-    assert!(worker.state_file(project).is_some());
+    assert!(worker.state_file(&project_name).is_some());
     assert_eq!(worker.pids(project).len(), 1);
 }
 
@@ -56,11 +56,11 @@ fn test_start_multiple_success() {
     cmd.assert().success();
 
     // Verify that project 1 is running
-    assert!(worker.state_file(project1).is_some());
+    assert!(worker.state_file(&project1_name).is_some());
     assert_eq!(worker.pids(project1).len(), 1);
 
     // Verify that project 2 is running
-    assert!(worker.state_file(project2).is_some());
+    assert!(worker.state_file(&project2_name).is_some());
     assert_eq!(worker.pids(project2).len(), 1);
 }
 
@@ -87,7 +87,7 @@ fn test_start_multiple_one_already_running() {
     assert_eq!(new_pids1.len(), 1);
 
     // Verify that project 2 is running
-    assert!(worker.state_file(project2).is_some());
+    assert!(worker.state_file(&project2_name).is_some());
     assert_eq!(worker.pids(project2).len(), 1);
 }
 
@@ -102,10 +102,12 @@ fn test_start_group_success() {
     cmd.assert().success();
 
     let projects = worker.group_projects(&group1);
+    let project1_name = worker.project_name(&projects[0]);
+    let project2_name = worker.project_name(&projects[1]);
 
     // Verify that the state file exists
-    assert!(worker.state_file(projects[0]).is_some());
-    assert!(worker.state_file(projects[1]).is_some());
+    assert!(worker.state_file(&project1_name).is_some());
+    assert!(worker.state_file(&project2_name).is_some());
     assert_eq!(worker.pids(projects[0]).len(), 1);
     assert_eq!(worker.pids(projects[1]).len(), 1);
 }
@@ -124,10 +126,13 @@ fn test_start_group_and_project_success() {
 
     let projects = worker.group_projects(&group1);
 
+    let project1_name = worker.project_name(&projects[0]);
+    let project2_name = worker.project_name(&projects[1]);
+
     // Verify that the state file exists
-    assert!(worker.state_file(projects[0]).is_some());
-    assert!(worker.state_file(projects[1]).is_some());
-    assert!(worker.state_file(project3).is_some());
+    assert!(worker.state_file(&project1_name).is_some());
+    assert!(worker.state_file(&project2_name).is_some());
+    assert!(worker.state_file(&project3_name).is_some());
     assert_eq!(worker.pids(projects[0]).len(), 1);
     assert_eq!(worker.pids(projects[1]).len(), 1);
     assert_eq!(worker.pids(project3).len(), 1);
@@ -148,11 +153,16 @@ fn test_start_multiple_groups() {
     let projects1 = worker.group_projects(&group1);
     let projects2 = worker.group_projects(&group1);
 
+    let project11_name = worker.project_name(&projects1[0]);
+    let project12_name = worker.project_name(&projects1[1]);
+    let project21_name = worker.project_name(&projects2[0]);
+    let project22_name = worker.project_name(&projects2[1]);
+
     // Verify that the state file exists
-    assert!(worker.state_file(projects1[0]).is_some());
-    assert!(worker.state_file(projects1[1]).is_some());
-    assert!(worker.state_file(projects2[0]).is_some());
-    assert!(worker.state_file(projects2[1]).is_some());
+    assert!(worker.state_file(&project11_name).is_some());
+    assert!(worker.state_file(&project12_name).is_some());
+    assert!(worker.state_file(&project21_name).is_some());
+    assert!(worker.state_file(&project22_name).is_some());
 
     assert_eq!(worker.pids(projects1[0]).len(), 1);
     assert_eq!(worker.pids(projects1[1]).len(), 1);
@@ -169,19 +179,21 @@ fn test_start_starts_dependencies() {
     let dep2 = WorkerTestProject::Two;
 
     let project_name = worker.project_name(&project);
+    let dep1_name = worker.project_name(&dep1);
+    let dep2_name = worker.project_name(&dep2);
 
     let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
     // Verify that the state file exists
-    assert!(worker.state_file(project).is_some());
+    assert!(worker.state_file(&project_name).is_some());
     assert_eq!(worker.pids(project).len(), 1);
 
     // Verify that the state file exists
-    assert!(worker.state_file(dep1).is_some());
+    assert!(worker.state_file(&dep1_name).is_some());
     assert_eq!(worker.pids(dep1).len(), 1);
 
     // Verify that the state file exists
-    assert!(worker.state_file(dep2).is_some());
+    assert!(worker.state_file(&dep2_name).is_some());
     assert_eq!(worker.pids(dep2).len(), 1);
 }

@@ -10,7 +10,7 @@ fn test_logs_project_not_running() {
 
     let project_name = worker.project_name(&WorkerTestProject::One);
 
-    let mut cmd = worker.logs(&project_name);
+    let mut cmd = worker.logs(&[&project_name]);
     cmd.assert().failure();
 }
 
@@ -28,7 +28,7 @@ fn test_logs_success() {
 
     // Try multiple times since it may not output immediately
     while Instant::now().duration_since(start) < timeout {
-        let mut cmd = worker.logs(&project_name);
+        let mut cmd = worker.logs(&[&project_name]);
         cmd.assert().success();
 
         let output = &cmd.output().unwrap().stdout;

@@ -41,7 +41,7 @@ fn test_stop_success() {
     let mut cmd = worker.stop(&[&project_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(project).is_none());
+    assert!(worker.state_file(&project_name).is_none());
     assert_eq!(worker.pids(project).len(), 0);
 }
 
@@ -62,11 +62,11 @@ fn test_stop_success_one_still_running() {
     let mut cmd = worker.stop(&[&project2_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(project2).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
     assert_eq!(worker.pids(project2).len(), 0);
 
     // Assert that project 3 is still running
-    assert!(worker.state_file(project3).is_some());
+    assert!(worker.state_file(&project3_name).is_some());
     assert_eq!(worker.pids(project3).len(), 1);
 }
 
@@ -87,10 +87,10 @@ fn test_stop_multiple_success() {
     let mut cmd = worker.stop(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(project2).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
     assert_eq!(worker.pids(project2).len(), 0);
 
-    assert!(worker.state_file(project3).is_none());
+    assert!(worker.state_file(&project3_name).is_none());
     assert_eq!(worker.pids(project3).len(), 0);
 }
 
@@ -111,7 +111,7 @@ fn test_stop_multiple_one_already_stopped() {
     let mut cmd = worker.stop(&[&project2_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(project2).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
     assert_eq!(worker.pids(project2).len(), 0);
 
     // Stop the projects
@@ -119,10 +119,10 @@ fn test_stop_multiple_one_already_stopped() {
     cmd.assert().success();
 
     // Assert that the project is still stopped
-    assert!(worker.state_file(project2).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
     assert_eq!(worker.pids(project2).len(), 0);
 
-    assert!(worker.state_file(project3).is_none());
+    assert!(worker.state_file(&project3_name).is_none());
     assert_eq!(worker.pids(project3).len(), 0);
 }
 
@@ -142,9 +142,12 @@ fn test_stop_group_success() {
 
     let projects = worker.group_projects(&group1);
 
+    let project1_name = worker.project_name(&projects[0]);
+    let project2_name = worker.project_name(&projects[1]);
+
     // Verify that the state file exists
-    assert!(worker.state_file(projects[0]).is_none());
-    assert!(worker.state_file(projects[1]).is_none());
+    assert!(worker.state_file(&project1_name).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
     assert_eq!(worker.pids(projects[0]).len(), 0);
     assert_eq!(worker.pids(projects[1]).len(), 0);
 }
@@ -168,11 +171,16 @@ fn test_stop_multiple_groups_success() {
     let projects1 = worker.group_projects(&group1);
     let projects2 = worker.group_projects(&group2);
 
+    let project11_name = worker.project_name(&projects1[0]);
+    let project12_name = worker.project_name(&projects1[1]);
+    let project21_name = worker.project_name(&projects2[0]);
+    let project22_name = worker.project_name(&projects2[1]);
+
     // Verify that the state file exists
-    assert!(worker.state_file(projects1[0]).is_none());
-    assert!(worker.state_file(projects1[1]).is_none());
-    assert!(worker.state_file(projects2[0]).is_none());
-    assert!(worker.state_file(projects2[1]).is_none());
+    assert!(worker.state_file(&project11_name).is_none());
+    assert!(worker.state_file(&project12_name).is_none());
+    assert!(worker.state_file(&project21_name).is_none());
+    assert!(worker.state_file(&project22_name).is_none());
     assert_eq!(worker.pids(projects1[0]).len(), 0);
     assert_eq!(worker.pids(projects1[1]).len(), 0);
     assert_eq!(worker.pids(projects2[0]).len(), 0);
@@ -197,10 +205,13 @@ fn test_stop_groups_and_project_success() {
 
     let projects1 = worker.group_projects(&group1);
 
+    let project1_name = worker.project_name(&projects1[0]);
+    let project2_name = worker.project_name(&projects1[1]);
+
     // Verify that the state file exists
-    assert!(worker.state_file(projects1[0]).is_none());
-    assert!(worker.state_file(projects1[1]).is_none());
-    assert!(worker.state_file(project3).is_none());
+    assert!(worker.state_file(&project1_name).is_none());
+    assert!(worker.state_file(&project2_name).is_none());
+    assert!(worker.state_file(&project3_name).is_none());
     assert_eq!(worker.pids(projects1[0]).len(), 0);
     assert_eq!(worker.pids(projects1[1]).len(), 0);
     assert_eq!(worker.pids(project3).len(), 0);

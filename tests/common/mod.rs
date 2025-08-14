@@ -127,12 +127,12 @@ impl WorkerTestConfig {
         self.run_cmd("start", Some(projects))
     }
 
-    pub fn logs(&self, project: &str) -> Command {
-        self.run_cmd("logs", Some(&[project]))
+    pub fn logs(&self, project: &[&str]) -> Command {
+        self.run_cmd("logs", Some(project))
     }
 
-    pub fn run(&self, project: &str) -> Command {
-        self.run_cmd("run", Some(&[project]))
+    pub fn run(&self, project: &[&str]) -> Command {
+        self.run_cmd("run", Some(project))
     }
 
     pub fn restart(&self, projects: &[&str]) -> Command {
@@ -166,12 +166,11 @@ impl WorkerTestConfig {
         }
     }
 
-    pub fn state_file(&self, project: WorkerTestProject) -> Option<DirEntry> {
+    pub fn state_file(&self, name: &str) -> Option<DirEntry> {
         let dir = self.dir.path().join(".worker/state").read_dir().unwrap();
 
         for entry in dir.into_iter() {
             let entry = entry.unwrap();
-            let name = &self.project_name(&project);
             if entry.file_name().to_string_lossy().contains(name) {
                 return Some(entry);
             }
@@ -192,6 +191,19 @@ impl WorkerTestConfig {
             WorkerTestProject::GroupOne => self.groups[0].to_string(),
             WorkerTestProject::GroupTwo => self.groups[1].to_string(),
         }
+    }
+
+    pub fn cmd_pids(&self, cmd: &str) -> Vec<Pid> {
+        let cmd = ["sh", "-c", cmd].into_iter().collect::<Vec<_>>();
+        // HACK: Seems like I unfortunately need to sleep a bit here to make the tests less flaky
+        // Seems like they need some time before they are recognized as processes.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        System::new_all()
+            .processes()
+            .values()
+            .filter_map(|p| if p.cmd() == cmd { Some(p.pid()) } else { None })
+            .collect()
     }
 
     pub fn pids(&self, project: WorkerTestProject) -> Vec<Pid> {
