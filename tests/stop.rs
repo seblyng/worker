@@ -240,8 +240,6 @@ fn test_stop_not_stop_dependencies() {
     assert_eq!(worker.pids(dep2).len(), 1);
 }
 
-// TODO(seb): Stop is currently not working with a one-off command
-// Not registered as a project in the config
 #[test]
 fn test_stop_command_success() {
     let worker = WorkerTestConfig::new();

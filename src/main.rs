@@ -25,28 +25,22 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
     Ok(())
 }
 
-fn stop(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
-    let (running, not_running) = config.partition_projects(projects)?;
-
-    for project in running.iter() {
+fn stop(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyhow::Error> {
+    for project in projects.iter() {
         project.stop()?;
-    }
-
-    for project in not_running {
-        eprintln!("Cannot stop project not running: {}", project);
     }
 
     let timeout = Duration::new(5, 0);
     let start = Instant::now();
 
     while Instant::now().duration_since(start) < timeout {
-        let (still_running, _) = config.partition_projects(running.clone())?;
+        let (still_running, _) = config.partition_projects(projects.clone())?;
         if still_running.is_empty() {
             return Ok(());
         }
     }
 
-    let (still_running, _) = config.partition_projects(running)?;
+    let (still_running, _) = config.partition_projects(projects)?;
     for p in still_running {
         eprintln!("Was not able to stop {}", p);
     }
@@ -54,16 +48,9 @@ fn stop(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Err
     Ok(())
 }
 
-fn restart(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
-    let (projects, filtered) = config.partition_projects(projects)?;
-    let projects: Vec<Project> = projects.into_iter().map(|p| p.into()).collect();
-
-    for project in filtered {
-        eprintln!("Cannot restart project not running: {}", project);
-    }
-
+fn restart(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyhow::Error> {
     stop(config, projects.clone())?;
-    start(config, projects)?;
+    start(config, projects.into_iter().map(|p| p.into()).collect())?;
 
     Ok(())
 }
@@ -130,9 +117,20 @@ enum ActionArg {
     Group(Vec<Project>),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ActionArgRunning {
+    Project(RunningProject),
+    Group(Vec<RunningProject>),
+}
+
 #[derive(Debug, Parser)]
 struct ActionArgs {
     projects: Vec<ActionArg>,
+}
+
+#[derive(Debug, Parser)]
+struct ActionArgsRunning {
+    projects: Vec<ActionArgRunning>,
 }
 
 #[derive(Debug, Parser)]
@@ -226,9 +224,9 @@ enum SubCommands {
     /// Start the specified project(s). E.g. `worker start foo bar`
     Start(StartArgs),
     /// Stop the specified project(s). E.g. `worker stop foo bar`
-    Stop(ActionArgs),
+    Stop(ActionArgsRunning),
     /// Restart the specified project(s). E.g. `worker restart foo bar` (Same as running stop and then start)
-    Restart(ActionArgs),
+    Restart(ActionArgsRunning),
     /// Runs the project in the foreground
     Run(RunArgs),
     /// Print out a status of which projects is running
@@ -271,8 +269,29 @@ fn main() -> Result<(), anyhow::Error> {
 
             start(&config, projects)?
         }
-        SubCommands::Stop(args) => stop(&config, unique(args.projects))?,
-        SubCommands::Restart(args) => restart(&config, unique(args.projects))?,
+        SubCommands::Stop(args) => stop(
+            &config,
+            args.projects
+                .into_iter()
+                .flat_map(|it| match it {
+                    ActionArgRunning::Project(project) => vec![project],
+                    ActionArgRunning::Group(vec) => vec,
+                })
+                .unique()
+                .collect(),
+        )?,
+
+        SubCommands::Restart(args) => restart(
+            &config,
+            args.projects
+                .into_iter()
+                .flat_map(|it| match it {
+                    ActionArgRunning::Project(project) => vec![project],
+                    ActionArgRunning::Group(vec) => vec,
+                })
+                .unique()
+                .collect(),
+        )?,
         SubCommands::Run(args) => {
             let project = match (args.project, args.name, args.cmd) {
                 (Some(project), None, None) => project,

@@ -166,6 +166,12 @@ impl Hash for Project {
     }
 }
 
+impl Hash for RunningProject {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state)
+    }
+}
+
 macro_rules! impl_display {
     ($project:tt) => {
         impl std::fmt::Display for $project {
@@ -201,7 +207,13 @@ impl FromStr for Project {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let config = WorkerConfig::new()?;
-        find_project(s, config)
+        let projects: Vec<String> = config.projects.iter().map(|p| p.name.clone()).collect();
+
+        config
+            .projects
+            .into_iter()
+            .find(|it| it.name == s)
+            .with_context(|| format!("Valid projects are {:#?}", projects))
     }
 }
 
@@ -210,43 +222,14 @@ impl FromStr for RunningProject {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let config = WorkerConfig::new()?;
-        let project = find_project(s, config.clone()).unwrap_or_else(|_| Project {
-            name: s.to_string(),
-            cwd: std::env::current_dir()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
-            ..Default::default()
-        });
+        let project = config
+            .get_state(s)?
+            .ok_or_else(|| anyhow!("Project {} is not running or does not exist", s))?;
 
-        let pid = config
-            .get_pid(&project)?
-            .ok_or_else(|| anyhow!("{} is not running", project))?;
-
-        if !has_processes_running(pid) {
+        if !has_processes_running(project.pid) {
             return Err(anyhow!("{} is not running", project));
         }
 
-        Ok(RunningProject {
-            name: project.name,
-            command: project.command,
-            cwd: project.cwd,
-            display: project.display,
-            stop_signal: project.stop_signal,
-            envs: project.envs,
-            group: project.group,
-            pid,
-            dependencies: project.dependencies,
-        })
+        Ok(project)
     }
-}
-
-fn find_project(name: &str, config: WorkerConfig) -> Result<Project, anyhow::Error> {
-    let projects: Vec<String> = config.projects.iter().map(|p| p.name.clone()).collect();
-
-    config
-        .projects
-        .into_iter()
-        .find(|it| it.name == name)
-        .with_context(|| format!("Valid projects are {:#?}", projects))
 }

@@ -230,8 +230,6 @@ fn test_restart_not_restarting_dependencies() {
     assert_eq!(pid2, new_pid2);
 }
 
-// TODO(seb): Restart is currently not working with a one-off command
-// Not registered as a project in the config
 #[test]
 fn test_restart_command_success() {
     let worker = WorkerTestConfig::new();

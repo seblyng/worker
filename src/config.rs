@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::{
     project::{Project, RunningProject, WorkerProject},
-    ActionArg,
+    ActionArg, ActionArgRunning,
 };
 
 const CONFIG_FILE: &str = ".worker.toml";
@@ -57,6 +57,34 @@ impl FromStr for ActionArg {
     }
 }
 
+impl FromStr for ActionArgRunning {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let config = WorkerConfig::new()?;
+
+        let running = config.running()?;
+
+        let projects_in_group: Vec<_> = running
+            .clone()
+            .into_iter()
+            .filter(|it| {
+                it.group
+                    .as_ref()
+                    .is_some_and(|group| group.contains(&s.to_string()))
+            })
+            .collect();
+
+        if !projects_in_group.is_empty() {
+            Ok(ActionArgRunning::Group(projects_in_group))
+        } else if let Some(project) = running.iter().find(|it| it.name == s) {
+            Ok(ActionArgRunning::Project(project.clone()))
+        } else {
+            println!("{} is not a project or not running", s);
+            Ok(ActionArgRunning::Group(vec![]))
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct WorkerConfig {
     pub projects: Vec<Project>,
@@ -89,19 +117,34 @@ impl WorkerConfig {
         self.log_dir.join(project.name())
     }
 
-    pub fn get_pid(&self, project: &Project) -> Result<Option<i32>, anyhow::Error> {
-        let pid = std::fs::read_dir(self.state_dir.as_path())?.find_map(|entry| {
+    pub fn get_state(&self, name: &str) -> Result<Option<RunningProject>, anyhow::Error> {
+        let project = std::fs::read_dir(self.state_dir.as_path())?.find_map(|entry| {
             let path = entry.ok()?.path();
-            let path = path.file_name()?.to_str()?;
-            let (name, pid) = path.rsplit_once('-').context("No - in string").ok()?;
-            if name == project.name {
-                pid.parse::<i32>().ok()
+            let file_name = path.file_name()?.to_str()?;
+            let (project_name, pid) = file_name.rsplit_once('-').context("No - in string").ok()?;
+            if name == project_name {
+                let str = std::fs::read_to_string(&path).ok()?;
+                let project = serde_json::from_str::<Project>(&str)
+                    .context("Couldn't parse project from state file")
+                    .ok()?;
+
+                Some(RunningProject {
+                    name: project.name,
+                    command: project.command,
+                    cwd: project.cwd,
+                    display: project.display,
+                    stop_signal: project.stop_signal,
+                    envs: project.envs,
+                    group: project.group,
+                    pid: pid.parse::<i32>().ok()?,
+                    dependencies: project.dependencies,
+                })
             } else {
                 None
             }
         });
 
-        Ok(pid)
+        Ok(project)
     }
 
     pub fn store_state(&self, pid: i32, project: &Project) -> Result<(), anyhow::Error> {
