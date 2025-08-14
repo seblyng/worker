@@ -19,7 +19,7 @@ fn test_status_one_running() {
     let project1_name = worker.project_name(&project1);
     let project2_name = worker.project_name(&project2);
 
-    let mut cmd = worker.start(&[project1]);
+    let mut cmd = worker.start(&[&project1_name]);
     cmd.assert().success();
 
     let mut cmd = worker.status();
@@ -43,7 +43,7 @@ fn test_status_multiple_running() {
     let project2_name = worker.project_name(&project2);
     let project3_name = worker.project_name(&project3);
 
-    let mut cmd = worker.start(&[project1, project2]);
+    let mut cmd = worker.start(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
     let mut cmd = worker.status();

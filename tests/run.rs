@@ -7,7 +7,9 @@ fn test_run_project() {
     let worker = WorkerTestConfig::new();
     let project = WorkerTestProject::Four;
 
-    let mut cmd = worker.run(project);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.run(&project_name);
     cmd.assert().success().stdout("Hello from test!\n");
 
     assert_eq!(worker.pids(project).len(), 0);
@@ -21,7 +23,9 @@ fn test_run_project_starts_dependencies() {
     let dep1 = WorkerTestProject::One;
     let dep2 = WorkerTestProject::Two;
 
-    let mut cmd = worker.run(project);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.run(&project_name);
     cmd.assert().stdout("Hello from test!\n");
 
     assert_eq!(worker.pids(project).len(), 0);

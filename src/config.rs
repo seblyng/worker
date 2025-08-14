@@ -119,8 +119,13 @@ impl WorkerConfig {
         let projects = std::fs::read_dir(self.state_dir.as_path())?
             .filter_map(|entry| {
                 let path = entry.ok()?.path();
-                let path = path.file_name()?.to_str()?;
-                if let Ok(running_project) = RunningProject::from_str(path) {
+                let (name, _) = path
+                    .file_name()?
+                    .to_str()?
+                    .rsplit_once('-')
+                    .context("No - in string")
+                    .ok()?;
+                if let Ok(running_project) = RunningProject::from_str(name) {
                     Some(running_project)
                 } else {
                     let _ = std::fs::remove_file(path);

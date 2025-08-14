@@ -6,7 +6,9 @@ mod common;
 fn test_stop_unknown_project() {
     let worker = WorkerTestConfig::new();
 
-    let mut cmd = worker.stop(&[WorkerTestProject::Unknown]);
+    let project_name = worker.project_name(&WorkerTestProject::Unknown);
+
+    let mut cmd = worker.stop(&[&project_name]);
     cmd.assert().failure();
 }
 
@@ -15,7 +17,9 @@ fn test_stop_command_not_running() {
     let worker = WorkerTestConfig::new();
     let project = WorkerTestProject::Two;
 
-    let mut cmd = worker.stop(&[project]);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.stop(&[&project_name]);
     cmd.assert().stderr(format!(
         "Cannot stop project not running: {}\n",
         worker.project_name(&project)
@@ -27,12 +31,14 @@ fn test_stop_success() {
     let worker = WorkerTestConfig::new();
     let project = WorkerTestProject::Two;
 
+    let project_name = worker.project_name(&project);
+
     // Start the project
-    let mut cmd = worker.start(&[project]);
+    let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
     // Stop the project
-    let mut cmd = worker.stop(&[project]);
+    let mut cmd = worker.stop(&[&project_name]);
     cmd.assert().success();
 
     assert!(worker.state_file(project).is_none());
@@ -45,12 +51,15 @@ fn test_stop_success_one_still_running() {
     let project2 = WorkerTestProject::Two;
     let project3 = WorkerTestProject::Three;
 
+    let project2_name = worker.project_name(&project2);
+    let project3_name = worker.project_name(&project3);
+
     // Start the project
-    let mut cmd = worker.start(&[project2, project3]);
+    let mut cmd = worker.start(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
     // Stop the project
-    let mut cmd = worker.stop(&[project2]);
+    let mut cmd = worker.stop(&[&project2_name]);
     cmd.assert().success();
 
     assert!(worker.state_file(project2).is_none());
@@ -67,12 +76,15 @@ fn test_stop_multiple_success() {
     let project2 = WorkerTestProject::Two;
     let project3 = WorkerTestProject::Three;
 
+    let project2_name = worker.project_name(&project2);
+    let project3_name = worker.project_name(&project3);
+
     // Start the projects
-    let mut cmd = worker.start(&[project2, project3]);
+    let mut cmd = worker.start(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
     // Stop the projects
-    let mut cmd = worker.stop(&[project2, project3]);
+    let mut cmd = worker.stop(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
     assert!(worker.state_file(project2).is_none());
@@ -88,19 +100,22 @@ fn test_stop_multiple_one_already_stopped() {
     let project2 = WorkerTestProject::Two;
     let project3 = WorkerTestProject::Three;
 
+    let project2_name = worker.project_name(&project2);
+    let project3_name = worker.project_name(&project3);
+
     // Start the projects
-    let mut cmd = worker.start(&[project2, project3]);
+    let mut cmd = worker.start(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
     // Stop the projects
-    let mut cmd = worker.stop(&[project2]);
+    let mut cmd = worker.stop(&[&project2_name]);
     cmd.assert().success();
 
     assert!(worker.state_file(project2).is_none());
     assert_eq!(worker.pids(project2).len(), 0);
 
     // Stop the projects
-    let mut cmd = worker.stop(&[project2, project3]);
+    let mut cmd = worker.stop(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
     // Assert that the project is still stopped
@@ -116,11 +131,13 @@ fn test_stop_group_success() {
     let worker = WorkerTestConfig::new();
     let group1 = WorkerTestProject::GroupOne;
 
+    let group1_name = worker.project_name(&group1);
+
     // Start the project
-    let mut cmd = worker.start(&[group1]);
+    let mut cmd = worker.start(&[&group1_name]);
     cmd.assert().success();
 
-    let mut cmd = worker.stop(&[group1]);
+    let mut cmd = worker.stop(&[&group1_name]);
     cmd.assert().success();
 
     let projects = worker.group_projects(&group1);
@@ -138,11 +155,14 @@ fn test_stop_multiple_groups_success() {
     let group1 = WorkerTestProject::GroupOne;
     let group2 = WorkerTestProject::GroupTwo;
 
+    let group1_name = worker.project_name(&group1);
+    let group2_name = worker.project_name(&group2);
+
     // Start the project
-    let mut cmd = worker.start(&[group1, group2]);
+    let mut cmd = worker.start(&[&group1_name, &group2_name]);
     cmd.assert().success();
 
-    let mut cmd = worker.stop(&[group1, group2]);
+    let mut cmd = worker.stop(&[&group1_name, &group2_name]);
     cmd.assert().success();
 
     let projects1 = worker.group_projects(&group1);
@@ -165,11 +185,14 @@ fn test_stop_groups_and_project_success() {
     let group1 = WorkerTestProject::GroupOne;
     let project3 = WorkerTestProject::Three;
 
+    let group1_name = worker.project_name(&group1);
+    let project3_name = worker.project_name(&project3);
+
     // Start the project
-    let mut cmd = worker.start(&[group1, project3]);
+    let mut cmd = worker.start(&[&group1_name, &project3_name]);
     cmd.assert().success();
 
-    let mut cmd = worker.stop(&[group1, project3]);
+    let mut cmd = worker.stop(&[&group1_name, &project3_name]);
     cmd.assert().success();
 
     let projects1 = worker.group_projects(&group1);
@@ -190,11 +213,13 @@ fn test_stop_not_stop_dependencies() {
     let dep1 = WorkerTestProject::One;
     let dep2 = WorkerTestProject::Two;
 
+    let project_name = worker.project_name(&project);
+
     // Start the project
-    let mut cmd = worker.start(&[project]);
+    let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
-    let mut cmd = worker.stop(&[project]);
+    let mut cmd = worker.stop(&[&project_name]);
     cmd.assert().success();
 
     // Verify that the state file exists

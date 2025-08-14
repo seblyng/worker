@@ -112,38 +112,34 @@ impl WorkerTestConfig {
         }
     }
 
-    fn run_cmd(&self, command: &str, projects: Option<&[WorkerTestProject]>) -> Command {
+    fn run_cmd(&self, command: &str, projects: Option<&[&str]>) -> Command {
         let mut cmd = Command::cargo_bin("worker").unwrap();
         cmd.current_dir(&self.dir).arg(command);
 
         if let Some(projects) = projects {
-            let projects = projects
-                .iter()
-                .map(|p| self.project_name(p))
-                .collect::<Vec<_>>();
-            cmd.args(&projects);
+            cmd.args(projects);
         }
 
         cmd
     }
 
-    pub fn start(&self, projects: &[WorkerTestProject]) -> Command {
+    pub fn start(&self, projects: &[&str]) -> Command {
         self.run_cmd("start", Some(projects))
     }
 
-    pub fn logs(&self, project: WorkerTestProject) -> Command {
+    pub fn logs(&self, project: &str) -> Command {
         self.run_cmd("logs", Some(&[project]))
     }
 
-    pub fn run(&self, project: WorkerTestProject) -> Command {
+    pub fn run(&self, project: &str) -> Command {
         self.run_cmd("run", Some(&[project]))
     }
 
-    pub fn restart(&self, projects: &[WorkerTestProject]) -> Command {
+    pub fn restart(&self, projects: &[&str]) -> Command {
         self.run_cmd("restart", Some(projects))
     }
 
-    pub fn stop(&self, projects: &[WorkerTestProject]) -> Command {
+    pub fn stop(&self, projects: &[&str]) -> Command {
         self.run_cmd("stop", Some(projects))
     }
 

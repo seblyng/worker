@@ -7,14 +7,14 @@ fn test_start_project_already_running() {
     let worker = WorkerTestConfig::new();
     let project = WorkerTestProject::Three;
 
-    let mut cmd = worker.start(&[project]);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
-    let mut cmd = worker.start(&[project]);
-    cmd.assert().stderr(format!(
-        "{} is already running\n",
-        worker.project_name(&project)
-    ));
+    let mut cmd = worker.start(&[&project_name]);
+    cmd.assert()
+        .stderr(format!("{} is already running\n", &project_name));
 
     assert_eq!(worker.pids(project).len(), 1);
 }
@@ -22,8 +22,9 @@ fn test_start_project_already_running() {
 #[test]
 fn test_start_unknown_project() {
     let worker = WorkerTestConfig::new();
+    let project = worker.project_name(&WorkerTestProject::Unknown);
 
-    let mut cmd = worker.start(&[WorkerTestProject::Unknown]);
+    let mut cmd = worker.start(&[&project]);
     cmd.assert().failure();
 }
 
@@ -32,7 +33,9 @@ fn test_start_success() {
     let worker = WorkerTestConfig::new();
     let project = WorkerTestProject::One;
 
-    let mut cmd = worker.start(&[project]);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
     // Verify that the state file exists
@@ -46,7 +49,10 @@ fn test_start_multiple_success() {
     let project1 = WorkerTestProject::One;
     let project2 = WorkerTestProject::Two;
 
-    let mut cmd = worker.start(&[project1, project2]);
+    let project1_name = worker.project_name(&project1);
+    let project2_name = worker.project_name(&project2);
+
+    let mut cmd = worker.start(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
     // Verify that project 1 is running
@@ -64,12 +70,15 @@ fn test_start_multiple_one_already_running() {
     let project1 = WorkerTestProject::One;
     let project2 = WorkerTestProject::Two;
 
-    let mut cmd = worker.start(&[project1]);
+    let project1_name = worker.project_name(&project1);
+    let project2_name = worker.project_name(&project2);
+
+    let mut cmd = worker.start(&[&project1_name]);
     cmd.assert().success();
 
     let pid1 = worker.pids(project1)[0];
 
-    let mut cmd = worker.start(&[project1, project2]);
+    let mut cmd = worker.start(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
     // Should not start the already running project
@@ -87,7 +96,9 @@ fn test_start_group_success() {
     let worker = WorkerTestConfig::new();
     let group1 = WorkerTestProject::GroupOne;
 
-    let mut cmd = worker.start(&[group1]);
+    let group1_name = worker.project_name(&group1);
+
+    let mut cmd = worker.start(&[&group1_name]);
     cmd.assert().success();
 
     let projects = worker.group_projects(&group1);
@@ -105,7 +116,10 @@ fn test_start_group_and_project_success() {
     let group1 = WorkerTestProject::GroupOne;
     let project3 = WorkerTestProject::Three;
 
-    let mut cmd = worker.start(&[group1, project3]);
+    let group1_name = worker.project_name(&group1);
+    let project3_name = worker.project_name(&project3);
+
+    let mut cmd = worker.start(&[&group1_name, &project3_name]);
     cmd.assert().success();
 
     let projects = worker.group_projects(&group1);
@@ -125,7 +139,10 @@ fn test_start_multiple_groups() {
     let group1 = WorkerTestProject::GroupOne;
     let group2 = WorkerTestProject::GroupTwo;
 
-    let mut cmd = worker.start(&[group1, group2]);
+    let group1_name = worker.project_name(&group1);
+    let group2_name = worker.project_name(&group2);
+
+    let mut cmd = worker.start(&[&group1_name, &group2_name]);
     cmd.assert().success();
 
     let projects1 = worker.group_projects(&group1);
@@ -151,7 +168,9 @@ fn test_start_starts_dependencies() {
     let dep1 = WorkerTestProject::One;
     let dep2 = WorkerTestProject::Two;
 
-    let mut cmd = worker.start(&[project]);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
     // Verify that the state file exists

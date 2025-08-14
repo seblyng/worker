@@ -5,7 +5,10 @@ mod common;
 #[test]
 fn test_restart_unknown_project() {
     let worker = WorkerTestConfig::new();
-    let mut cmd = worker.restart(&[WorkerTestProject::Unknown]);
+
+    let project_name = worker.project_name(&WorkerTestProject::Unknown);
+
+    let mut cmd = worker.restart(&[&project_name]);
     cmd.assert().failure();
 }
 
@@ -14,7 +17,9 @@ fn test_restart_success() {
     let worker = WorkerTestConfig::new();
     let project = WorkerTestProject::One;
 
-    let mut cmd = worker.start(&[project]);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
     // Verify that the state file exists
@@ -22,7 +27,7 @@ fn test_restart_success() {
 
     let pid = worker.pids(project)[0];
 
-    let mut cmd = worker.restart(&[project]);
+    let mut cmd = worker.restart(&[&project_name]);
     cmd.assert().success();
 
     // Verify that the state file exists
@@ -39,13 +44,16 @@ fn test_restart_multiple_success() {
     let project1 = WorkerTestProject::One;
     let project2 = WorkerTestProject::Two;
 
-    let mut cmd = worker.start(&[project1, project2]);
+    let project1_name = worker.project_name(&project1);
+    let project2_name = worker.project_name(&project2);
+
+    let mut cmd = worker.start(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
     let pid1 = worker.pids(project1)[0];
     let pid2 = worker.pids(project2)[0];
 
-    let mut cmd = worker.restart(&[project1, project2]);
+    let mut cmd = worker.restart(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
     let new_pid1 = worker.pids(project1)[0];
@@ -61,12 +69,15 @@ fn test_restart_multiple_only_one_running() {
     let project1 = WorkerTestProject::One;
     let project2 = WorkerTestProject::Two;
 
-    let mut cmd = worker.start(&[project1]);
+    let project1_name = worker.project_name(&project1);
+    let project2_name = worker.project_name(&project2);
+
+    let mut cmd = worker.start(&[&project1_name]);
     cmd.assert().success();
 
     let pid1 = worker.pids(project1)[0];
 
-    let mut cmd = worker.restart(&[project1, project2]);
+    let mut cmd = worker.restart(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
     let new_pid1 = worker.pids(project1)[0];
@@ -82,7 +93,9 @@ fn test_restart_group_success() {
     let worker = WorkerTestConfig::new();
     let group = WorkerTestProject::GroupOne;
 
-    let mut cmd = worker.start(&[group]);
+    let group_name = worker.project_name(&group);
+
+    let mut cmd = worker.start(&[&group_name]);
     cmd.assert().success();
 
     let projects = worker.group_projects(&group);
@@ -93,7 +106,7 @@ fn test_restart_group_success() {
     let pid1 = worker.pids(projects[0])[0];
     let pid2 = worker.pids(projects[1])[0];
 
-    let mut cmd = worker.restart(&[group]);
+    let mut cmd = worker.restart(&[&group_name]);
     cmd.assert().success();
 
     // Verify that the state file exists
@@ -113,7 +126,10 @@ fn test_restart_multiple_group_success() {
     let group1 = WorkerTestProject::GroupOne;
     let group2 = WorkerTestProject::GroupTwo;
 
-    let mut cmd = worker.start(&[group1, group2]);
+    let group1_name = worker.project_name(&group1);
+    let group2_name = worker.project_name(&group2);
+
+    let mut cmd = worker.start(&[&group1_name, &group2_name]);
     cmd.assert().success();
 
     let projects1 = worker.group_projects(&group1);
@@ -127,7 +143,7 @@ fn test_restart_multiple_group_success() {
     let pid3 = worker.pids(projects2[0])[0];
     let pid4 = worker.pids(projects2[1])[0];
 
-    let mut cmd = worker.restart(&[group1, group2]);
+    let mut cmd = worker.restart(&[&group1_name, &group2_name]);
     cmd.assert().success();
 
     // Verify that the state file exists
@@ -153,12 +169,15 @@ fn test_restart_group_one_project_running() {
     let group1 = WorkerTestProject::GroupOne;
     let projects = worker.group_projects(&group1);
 
-    let mut cmd = worker.start(&[projects[0]]);
+    let project1_name = worker.project_name(&projects[0]);
+    let group1_name = worker.project_name(&group1);
+
+    let mut cmd = worker.start(&[&project1_name]);
     cmd.assert().success();
 
     let pid1 = worker.pids(projects[0])[0];
 
-    let mut cmd = worker.restart(&[group1]);
+    let mut cmd = worker.restart(&[&group1_name]);
     cmd.assert().success();
 
     // Verify that the state file exists
@@ -180,14 +199,16 @@ fn test_restart_not_restarting_dependencies() {
     let dep1 = WorkerTestProject::One;
     let dep2 = WorkerTestProject::Two;
 
-    let mut cmd = worker.start(&[project, project]);
+    let project_name = worker.project_name(&project);
+
+    let mut cmd = worker.start(&[&project_name, &project_name]);
     cmd.assert().success();
 
     let pid = worker.pids(project)[0];
     let pid1 = worker.pids(dep1)[0];
     let pid2 = worker.pids(dep2)[0];
 
-    let mut cmd = worker.restart(&[project, project]);
+    let mut cmd = worker.restart(&[&project_name, &project_name]);
     cmd.assert().success();
 
     let new_pid = worker.pids(project)[0];
