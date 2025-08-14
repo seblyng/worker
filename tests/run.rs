@@ -1,4 +1,5 @@
 use common::{WorkerTestConfig, WorkerTestProject};
+use uuid::Uuid;
 
 mod common;
 
@@ -41,12 +42,28 @@ fn test_run_project_starts_dependencies() {
     assert_eq!(worker.pids(dep2).len(), 1);
 }
 
-// #[test]
-// fn test_run_command() {
-//     let worker = WorkerTestConfig::new();
-//
-//     let mut cmd = worker.run(&["-n", "foobar", "-c", "echo 'Hello from command!'"]);
-//     cmd.assert().success().stdout("Hello from command!\n");
-//
-//     // assert_eq!(worker.pids(project).len(), 0);
-// }
+#[test]
+fn test_run_command_success() {
+    let worker = WorkerTestConfig::new();
+
+    let uuid = Uuid::new_v4();
+    let echo_cmd = format!("echo 'Hello from {}!'", uuid);
+
+    let mut cmd = worker.run(&["-n", &uuid.to_string(), "-c", &echo_cmd]);
+    cmd.assert().success();
+
+    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 0);
+}
+
+#[test]
+fn test_run_command_require_name() {
+    let worker = WorkerTestConfig::new();
+
+    let uuid = Uuid::new_v4();
+    let echo_cmd = format!("echo 'Hello from {}!'", uuid);
+
+    let mut cmd = worker.start(&["-c", &echo_cmd]);
+    cmd.assert().failure();
+
+    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 0);
+}

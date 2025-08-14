@@ -1,4 +1,5 @@
 use common::{WorkerTestConfig, WorkerTestProject};
+use uuid::Uuid;
 
 mod common;
 
@@ -196,4 +197,32 @@ fn test_start_starts_dependencies() {
     // Verify that the state file exists
     assert!(worker.state_file(&dep2_name).is_some());
     assert_eq!(worker.pids(dep2).len(), 1);
+}
+
+#[test]
+fn test_start_command_success() {
+    let worker = WorkerTestConfig::new();
+
+    let uuid = Uuid::new_v4();
+    let echo_cmd = format!("echo 'Hello from {}!' && sleep 5", uuid);
+
+    let mut cmd = worker.start(&["-n", &uuid.to_string(), "-c", &echo_cmd]);
+    cmd.assert().success();
+
+    // Verify that the state file exists
+    assert!(worker.state_file(&uuid.to_string()).is_some());
+    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 1);
+}
+
+#[test]
+fn test_start_command_require_name() {
+    let worker = WorkerTestConfig::new();
+
+    let uuid = Uuid::new_v4();
+    let echo_cmd = format!("echo 'Hello from {}!' && sleep 5", uuid);
+
+    let mut cmd = worker.start(&["-c", &echo_cmd]);
+    cmd.assert().failure();
+
+    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 0);
 }

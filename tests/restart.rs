@@ -1,4 +1,5 @@
 use common::{WorkerTestConfig, WorkerTestProject};
+use uuid::Uuid;
 
 mod common;
 
@@ -227,4 +228,32 @@ fn test_restart_not_restarting_dependencies() {
     assert_ne!(pid, new_pid);
     assert_eq!(pid1, new_pid1);
     assert_eq!(pid2, new_pid2);
+}
+
+// TODO(seb): Restart is currently not working with a one-off command
+// Not registered as a project in the config
+#[test]
+fn test_restart_command_success() {
+    let worker = WorkerTestConfig::new();
+
+    let uuid = Uuid::new_v4();
+    let echo_cmd = format!("echo 'Hello from {}!' && sleep 5", uuid);
+
+    let mut cmd = worker.start(&["-n", &uuid.to_string(), "-c", &echo_cmd]);
+    cmd.assert().success();
+
+    // Verify that the state file exists
+    assert!(worker.state_file(&uuid.to_string()).is_some());
+
+    let pid = worker.cmd_pids(&echo_cmd)[0];
+
+    let mut cmd = worker.restart(&[&uuid.to_string()]);
+    cmd.assert().success();
+
+    // Verify that the state file exists
+    assert!(worker.state_file(&uuid.to_string()).is_some());
+
+    let new_pid = worker.cmd_pids(&echo_cmd)[0];
+
+    assert_ne!(pid, new_pid);
 }

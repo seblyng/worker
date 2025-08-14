@@ -1,4 +1,5 @@
 use common::{WorkerTestConfig, WorkerTestProject};
+use uuid::Uuid;
 
 mod common;
 
@@ -237,4 +238,24 @@ fn test_stop_not_stop_dependencies() {
     assert_eq!(worker.pids(project).len(), 0);
     assert_eq!(worker.pids(dep1).len(), 1);
     assert_eq!(worker.pids(dep2).len(), 1);
+}
+
+// TODO(seb): Stop is currently not working with a one-off command
+// Not registered as a project in the config
+#[test]
+fn test_stop_command_success() {
+    let worker = WorkerTestConfig::new();
+
+    let uuid = Uuid::new_v4();
+    let echo_cmd = format!("echo 'Hello from {}!' && sleep 5", uuid);
+
+    let mut cmd = worker.start(&["-n", &uuid.to_string(), "-c", &echo_cmd]);
+    cmd.assert().success();
+
+    // Stop the project
+    let mut cmd = worker.stop(&[&uuid.to_string()]);
+    cmd.assert().success();
+
+    assert!(worker.state_file(&uuid.to_string()).is_none());
+    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 0);
 }
