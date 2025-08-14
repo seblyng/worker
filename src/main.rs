@@ -1,10 +1,11 @@
 use std::time::{Duration, Instant};
 
-use anyhow::anyhow;
-use clap::{command, Parser};
+use clap::{command, ArgGroup, Parser};
 use config::WorkerConfig;
 use itertools::Itertools;
 use project::Project;
+
+use crate::project::RunningProject;
 
 pub mod config;
 pub mod libc;
@@ -100,10 +101,6 @@ fn list(config: &WorkerConfig, args: ListArgs) -> Result<(), anyhow::Error> {
 }
 
 fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
-    if !args.project.is_running(config)? {
-        return Err(anyhow!("{} is not running", args.project));
-    }
-
     let mut cmd = std::process::Command::new("tail");
 
     if args.follow {
@@ -116,7 +113,7 @@ fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
         .spawn()?;
 
     if args.follow {
-        while args.project.is_running(config)? {
+        while args.project.is_running() {
             std::thread::sleep(Duration::from_secs(2));
         }
         child.kill()?;
@@ -139,13 +136,72 @@ struct ActionArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(group(
+    ArgGroup::new("mode")
+        .required(true)
+        .multiple(false)
+        .args(["projects", "cmd"])
+))]
+struct StartArgs {
+    #[arg(value_name = "PROJECTS", id = "projects", conflicts_with_all = ["cmd", "name"])]
+    projects: Option<Vec<ActionArg>>,
+
+    /// One-off cmd (mutually exclusive with PROJECTS)
+    #[arg(
+        short = 'c',
+        long = "cmd",
+        value_name = "CMD",
+        id = "cmd",
+        requires = "name",
+        conflicts_with = "projects"
+    )]
+    cmd: Option<String>,
+
+    /// Optional name for one-off, only valid with --cmd
+    #[arg(
+        short = 'n',
+        long = "name",
+        requires = "cmd",
+        conflicts_with = "projects"
+    )]
+    name: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+#[command(group(
+    ArgGroup::new("mode")
+        .required(true)
+        .multiple(false)
+        .args(["project", "cmd"])
+))]
 struct RunArgs {
-    project: Project,
+    #[arg(value_name = "PROJECT", id = "project", conflicts_with_all = ["cmd", "name"])]
+    project: Option<Project>,
+
+    /// One-off cmd (mutually exclusive with PROJECT)
+    #[arg(
+        short = 'c',
+        long = "cmd",
+        value_name = "CMD",
+        id = "cmd",
+        requires = "name",
+        conflicts_with = "project"
+    )]
+    cmd: Option<String>,
+
+    /// Optional name for one-off, only valid with --cmd
+    #[arg(
+        short = 'n',
+        long = "name",
+        requires = "cmd",
+        conflicts_with = "project"
+    )]
+    name: Option<String>,
 }
 
 #[derive(Debug, Parser)]
 struct LogsArgs {
-    project: Project,
+    project: RunningProject,
     #[arg(short, long)]
     follow: bool,
 
@@ -168,7 +224,7 @@ struct ListArgs {
 #[derive(Parser, Debug)]
 enum SubCommands {
     /// Start the specified project(s). E.g. `worker start foo bar`
-    Start(ActionArgs),
+    Start(StartArgs),
     /// Stop the specified project(s). E.g. `worker stop foo bar`
     Stop(ActionArgs),
     /// Restart the specified project(s). E.g. `worker restart foo bar` (Same as running stop and then start)
@@ -206,10 +262,25 @@ fn main() -> Result<(), anyhow::Error> {
     };
 
     match cli.subcommand {
-        SubCommands::Start(args) => start(&config, unique(args.projects))?,
+        SubCommands::Start(args) => {
+            let projects = match (args.projects, args.name, args.cmd) {
+                (Some(projects), None, None) => unique(projects),
+                (None, Some(name), Some(command)) => vec![Project::from_cmd(name, command)],
+                _ => unreachable!("Only one of project or command should be specified"),
+            };
+
+            start(&config, projects)?
+        }
         SubCommands::Stop(args) => stop(&config, unique(args.projects))?,
         SubCommands::Restart(args) => restart(&config, unique(args.projects))?,
-        SubCommands::Run(args) => run(&config, args.project)?,
+        SubCommands::Run(args) => {
+            let project = match (args.project, args.name, args.cmd) {
+                (Some(project), None, None) => project,
+                (None, Some(name), Some(command)) => Project::from_cmd(name, command),
+                _ => unreachable!("Only one of project or command should be specified"),
+            };
+            run(&config, project)?
+        }
         SubCommands::Status(args) => status(&config, args)?,
         SubCommands::List(args) => list(&config, args)?,
         SubCommands::Logs(args) => logs(&config, args)?,

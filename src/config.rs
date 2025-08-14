@@ -5,7 +5,6 @@ use itertools::{Either, Itertools};
 use serde::Deserialize;
 
 use crate::{
-    libc::has_processes_running,
     project::{Project, RunningProject, WorkerProject},
     ActionArg,
 };
@@ -58,6 +57,7 @@ impl FromStr for ActionArg {
     }
 }
 
+#[derive(Clone)]
 pub struct WorkerConfig {
     pub projects: Vec<Project>,
     state_dir: PathBuf,
@@ -85,8 +85,23 @@ impl WorkerConfig {
         })
     }
 
-    pub fn log_file(&self, project: &Project) -> PathBuf {
-        self.log_dir.join(&project.name)
+    pub fn log_file<T: WorkerProject>(&self, project: &T) -> PathBuf {
+        self.log_dir.join(project.name())
+    }
+
+    pub fn get_pid(&self, project: &Project) -> Result<Option<i32>, anyhow::Error> {
+        let pid = std::fs::read_dir(self.state_dir.as_path())?.find_map(|entry| {
+            let path = entry.ok()?.path();
+            let path = path.file_name()?.to_str()?;
+            let (name, pid) = path.rsplit_once('-').context("No - in string").ok()?;
+            if name == project.name {
+                pid.parse::<i32>().ok()
+            } else {
+                None
+            }
+        });
+
+        Ok(pid)
     }
 
     pub fn store_state(&self, pid: i32, project: &Project) -> Result<(), anyhow::Error> {
@@ -104,11 +119,11 @@ impl WorkerConfig {
         let projects = std::fs::read_dir(self.state_dir.as_path())?
             .filter_map(|entry| {
                 let path = entry.ok()?.path();
-                let project = RunningProject::from_str(path.file_name()?.to_str()?).ok()?;
-                if has_processes_running(project.pid) {
-                    Some(project)
+                let path = path.file_name()?.to_str()?;
+                if let Ok(running_project) = RunningProject::from_str(path) {
+                    Some(running_project)
                 } else {
-                    let _ = std::fs::remove_file(&path);
+                    let _ = std::fs::remove_file(path);
                     None
                 }
             })

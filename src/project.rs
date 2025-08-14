@@ -15,11 +15,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::WorkerConfig,
-    libc::{fork, setsid, stop_pg, waitpid, Fork, Signal},
+    libc::{fork, has_processes_running, setsid, stop_pg, waitpid, Fork, Signal},
 };
 
 /// Project deserialized from config file
-#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq, Default)]
 pub struct Project {
     pub name: String,
     pub command: Vec<String>,
@@ -46,6 +46,22 @@ pub struct RunningProject {
 }
 
 impl Project {
+    pub fn from_cmd(name: String, cmd: String) -> Self {
+        Project {
+            name,
+            command: vec!["sh".to_string(), "-c".to_string(), cmd],
+            cwd: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            display: None,
+            stop_signal: None,
+            envs: None,
+            group: None,
+            dependencies: None,
+        }
+    }
+
     pub fn start(&self, config: &WorkerConfig) -> Result<(), anyhow::Error> {
         self.start_dependencies(config)?;
 
@@ -119,6 +135,10 @@ impl RunningProject {
         let signal = self.stop_signal.as_ref().unwrap_or(&Signal::SIGINT);
         stop_pg(self.pid, signal).map_err(|e| anyhow!("Error trying to stop project: {e}"))
     }
+
+    pub fn is_running(&self) -> bool {
+        has_processes_running(self.pid)
+    }
 }
 
 impl From<RunningProject> for Project {
@@ -180,7 +200,8 @@ impl FromStr for Project {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        find_project(s)
+        let config = WorkerConfig::new()?;
+        find_project(s, config)
     }
 }
 
@@ -188,8 +209,23 @@ impl FromStr for RunningProject {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (name, pid) = s.rsplit_once('-').context("No - in string")?;
-        let project = find_project(name)?;
+        let config = WorkerConfig::new()?;
+        let project = find_project(s, config.clone()).unwrap_or_else(|_| Project {
+            name: s.to_string(),
+            cwd: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            ..Default::default()
+        });
+
+        let pid = config
+            .get_pid(&project)?
+            .ok_or_else(|| anyhow!("{} is not running", project))?;
+
+        if !has_processes_running(pid) {
+            return Err(anyhow!("{} is not running", project));
+        }
 
         Ok(RunningProject {
             name: project.name,
@@ -199,14 +235,13 @@ impl FromStr for RunningProject {
             stop_signal: project.stop_signal,
             envs: project.envs,
             group: project.group,
-            pid: pid.parse().context("Couldn't parse pid")?,
+            pid,
             dependencies: project.dependencies,
         })
     }
 }
 
-fn find_project(name: &str) -> Result<Project, anyhow::Error> {
-    let config = WorkerConfig::new()?;
+fn find_project(name: &str, config: WorkerConfig) -> Result<Project, anyhow::Error> {
     let projects: Vec<String> = config.projects.iter().map(|p| p.name.clone()).collect();
 
     config
