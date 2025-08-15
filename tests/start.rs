@@ -1,6 +1,8 @@
 use common::{WorkerTestConfig, WorkerTestProject};
 use uuid::Uuid;
 
+use crate::common::PidError;
+
 mod common;
 
 #[test]
@@ -17,7 +19,7 @@ fn test_start_project_already_running() {
     cmd.assert()
         .stderr(format!("{} is already running\n", &project_name));
 
-    assert_eq!(worker.pids(project).len(), 1);
+    assert_eq!(worker.pids(&project_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -39,9 +41,7 @@ fn test_start_success() {
     let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project_name).is_some());
-    assert_eq!(worker.pids(project).len(), 1);
+    assert_eq!(worker.pids(&project_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -56,13 +56,8 @@ fn test_start_multiple_success() {
     let mut cmd = worker.start(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
-    // Verify that project 1 is running
-    assert!(worker.state_file(&project1_name).is_some());
-    assert_eq!(worker.pids(project1).len(), 1);
-
-    // Verify that project 2 is running
-    assert!(worker.state_file(&project2_name).is_some());
-    assert_eq!(worker.pids(project2).len(), 1);
+    assert_eq!(worker.pids(&project1_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&project2_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -77,19 +72,18 @@ fn test_start_multiple_one_already_running() {
     let mut cmd = worker.start(&[&project1_name]);
     cmd.assert().success();
 
-    let pid1 = worker.pids(project1)[0];
+    let pid1 = worker.pids(&project1_name).unwrap()[0];
 
     let mut cmd = worker.start(&[&project1_name, &project2_name]);
     cmd.assert().success();
 
     // Should not start the already running project
-    let new_pids1 = worker.pids(project1);
+    let new_pids1 = worker.pids(&project1_name).unwrap();
     assert_eq!(pid1, new_pids1[0]);
     assert_eq!(new_pids1.len(), 1);
 
     // Verify that project 2 is running
-    assert!(worker.state_file(&project2_name).is_some());
-    assert_eq!(worker.pids(project2).len(), 1);
+    assert_eq!(worker.pids(&project2_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -106,11 +100,8 @@ fn test_start_group_success() {
     let project1_name = worker.project_name(&projects[0]);
     let project2_name = worker.project_name(&projects[1]);
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project1_name).is_some());
-    assert!(worker.state_file(&project2_name).is_some());
-    assert_eq!(worker.pids(projects[0]).len(), 1);
-    assert_eq!(worker.pids(projects[1]).len(), 1);
+    assert_eq!(worker.pids(&project1_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&project2_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -130,13 +121,9 @@ fn test_start_group_and_project_success() {
     let project1_name = worker.project_name(&projects[0]);
     let project2_name = worker.project_name(&projects[1]);
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project1_name).is_some());
-    assert!(worker.state_file(&project2_name).is_some());
-    assert!(worker.state_file(&project3_name).is_some());
-    assert_eq!(worker.pids(projects[0]).len(), 1);
-    assert_eq!(worker.pids(projects[1]).len(), 1);
-    assert_eq!(worker.pids(project3).len(), 1);
+    assert_eq!(worker.pids(&project1_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&project2_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&project3_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -159,16 +146,10 @@ fn test_start_multiple_groups() {
     let project21_name = worker.project_name(&projects2[0]);
     let project22_name = worker.project_name(&projects2[1]);
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project11_name).is_some());
-    assert!(worker.state_file(&project12_name).is_some());
-    assert!(worker.state_file(&project21_name).is_some());
-    assert!(worker.state_file(&project22_name).is_some());
-
-    assert_eq!(worker.pids(projects1[0]).len(), 1);
-    assert_eq!(worker.pids(projects1[1]).len(), 1);
-    assert_eq!(worker.pids(projects2[0]).len(), 1);
-    assert_eq!(worker.pids(projects2[1]).len(), 1);
+    assert_eq!(worker.pids(&project11_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&project12_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&project21_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&project22_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -186,17 +167,9 @@ fn test_start_starts_dependencies() {
     let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project_name).is_some());
-    assert_eq!(worker.pids(project).len(), 1);
-
-    // Verify that the state file exists
-    assert!(worker.state_file(&dep1_name).is_some());
-    assert_eq!(worker.pids(dep1).len(), 1);
-
-    // Verify that the state file exists
-    assert!(worker.state_file(&dep2_name).is_some());
-    assert_eq!(worker.pids(dep2).len(), 1);
+    assert_eq!(worker.pids(&project_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&dep1_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&dep2_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -209,9 +182,7 @@ fn test_start_command_success() {
     let mut cmd = worker.start(&["-n", &uuid.to_string(), "-c", &echo_cmd]);
     cmd.assert().success();
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&uuid.to_string()).is_some());
-    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 1);
+    assert_eq!(worker.pids(&uuid.to_string()).unwrap().len(), 1);
 }
 
 #[test]
@@ -224,5 +195,5 @@ fn test_start_command_require_name() {
     let mut cmd = worker.start(&["-c", &echo_cmd]);
     cmd.assert().failure();
 
-    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&uuid.to_string()));
 }

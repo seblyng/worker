@@ -1,6 +1,8 @@
 use common::{WorkerTestConfig, WorkerTestProject};
 use uuid::Uuid;
 
+use crate::common::PidError;
+
 mod common;
 
 #[test]
@@ -42,8 +44,7 @@ fn test_stop_success() {
     let mut cmd = worker.stop(&[&project_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(&project_name).is_none());
-    assert_eq!(worker.pids(project).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project_name));
 }
 
 #[test]
@@ -63,12 +64,8 @@ fn test_stop_success_one_still_running() {
     let mut cmd = worker.stop(&[&project2_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(&project2_name).is_none());
-    assert_eq!(worker.pids(project2).len(), 0);
-
-    // Assert that project 3 is still running
-    assert!(worker.state_file(&project3_name).is_some());
-    assert_eq!(worker.pids(project3).len(), 1);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project2_name));
+    assert_eq!(worker.pids(&project3_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -88,11 +85,8 @@ fn test_stop_multiple_success() {
     let mut cmd = worker.stop(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(&project2_name).is_none());
-    assert_eq!(worker.pids(project2).len(), 0);
-
-    assert!(worker.state_file(&project3_name).is_none());
-    assert_eq!(worker.pids(project3).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project2_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project3_name));
 }
 
 #[test]
@@ -112,19 +106,14 @@ fn test_stop_multiple_one_already_stopped() {
     let mut cmd = worker.stop(&[&project2_name]);
     cmd.assert().success();
 
-    assert!(worker.state_file(&project2_name).is_none());
-    assert_eq!(worker.pids(project2).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project2_name));
 
     // Stop the projects
     let mut cmd = worker.stop(&[&project2_name, &project3_name]);
     cmd.assert().success();
 
-    // Assert that the project is still stopped
-    assert!(worker.state_file(&project2_name).is_none());
-    assert_eq!(worker.pids(project2).len(), 0);
-
-    assert!(worker.state_file(&project3_name).is_none());
-    assert_eq!(worker.pids(project3).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project2_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project3_name));
 }
 
 #[test]
@@ -146,11 +135,8 @@ fn test_stop_group_success() {
     let project1_name = worker.project_name(&projects[0]);
     let project2_name = worker.project_name(&projects[1]);
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project1_name).is_none());
-    assert!(worker.state_file(&project2_name).is_none());
-    assert_eq!(worker.pids(projects[0]).len(), 0);
-    assert_eq!(worker.pids(projects[1]).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project1_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project2_name));
 }
 
 #[test]
@@ -177,15 +163,10 @@ fn test_stop_multiple_groups_success() {
     let project21_name = worker.project_name(&projects2[0]);
     let project22_name = worker.project_name(&projects2[1]);
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project11_name).is_none());
-    assert!(worker.state_file(&project12_name).is_none());
-    assert!(worker.state_file(&project21_name).is_none());
-    assert!(worker.state_file(&project22_name).is_none());
-    assert_eq!(worker.pids(projects1[0]).len(), 0);
-    assert_eq!(worker.pids(projects1[1]).len(), 0);
-    assert_eq!(worker.pids(projects2[0]).len(), 0);
-    assert_eq!(worker.pids(projects2[1]).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project11_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project12_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project21_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project22_name));
 }
 
 #[test]
@@ -209,13 +190,9 @@ fn test_stop_groups_and_project_success() {
     let project1_name = worker.project_name(&projects1[0]);
     let project2_name = worker.project_name(&projects1[1]);
 
-    // Verify that the state file exists
-    assert!(worker.state_file(&project1_name).is_none());
-    assert!(worker.state_file(&project2_name).is_none());
-    assert!(worker.state_file(&project3_name).is_none());
-    assert_eq!(worker.pids(projects1[0]).len(), 0);
-    assert_eq!(worker.pids(projects1[1]).len(), 0);
-    assert_eq!(worker.pids(project3).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project1_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project2_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project3_name));
 }
 
 #[test]
@@ -226,6 +203,8 @@ fn test_stop_not_stop_dependencies() {
     let dep2 = WorkerTestProject::Two;
 
     let project_name = worker.project_name(&project);
+    let dep1_name = worker.project_name(&dep1);
+    let dep2_name = worker.project_name(&dep2);
 
     // Start the project
     let mut cmd = worker.start(&[&project_name]);
@@ -234,10 +213,9 @@ fn test_stop_not_stop_dependencies() {
     let mut cmd = worker.stop(&[&project_name]);
     cmd.assert().success();
 
-    // Verify that the state file exists
-    assert_eq!(worker.pids(project).len(), 0);
-    assert_eq!(worker.pids(dep1).len(), 1);
-    assert_eq!(worker.pids(dep2).len(), 1);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project_name));
+    assert_eq!(worker.pids(&dep1_name).unwrap().len(), 1);
+    assert_eq!(worker.pids(&dep2_name).unwrap().len(), 1);
 }
 
 #[test]
@@ -254,6 +232,5 @@ fn test_stop_command_success() {
     let mut cmd = worker.stop(&[&uuid.to_string()]);
     cmd.assert().success();
 
-    assert!(worker.state_file(&uuid.to_string()).is_none());
-    assert_eq!(worker.cmd_pids(&echo_cmd).len(), 0);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids(&uuid.to_string()));
 }

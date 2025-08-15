@@ -2,9 +2,22 @@
 use std::fs::DirEntry;
 
 use assert_cmd::{cargo::cargo_bin, Command};
+use serde::Deserialize;
 use sysinfo::{Pid, System};
 use tempfile::TempDir;
 use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+pub struct Project {
+    pub name: String,
+    pub command: Vec<String>,
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub enum PidError {
+    FileNotFound,
+    ParseError,
+}
 
 #[derive(Clone, Copy)]
 pub enum WorkerTestProject {
@@ -166,8 +179,8 @@ impl WorkerTestConfig {
         }
     }
 
-    pub fn state_file(&self, name: &str) -> Option<DirEntry> {
-        let dir = self.dir.path().join(".worker/state").read_dir().unwrap();
+    fn state_file(&self, name: &str) -> Option<DirEntry> {
+        let dir = self.dir.path().join(".worker/state").read_dir().ok()?;
 
         for entry in dir.into_iter() {
             let entry = entry.unwrap();
@@ -193,42 +206,28 @@ impl WorkerTestConfig {
         }
     }
 
-    pub fn cmd_pids(&self, cmd: &str) -> Vec<Pid> {
-        let cmd = ["sh", "-c", cmd].into_iter().collect::<Vec<_>>();
-        // HACK: Seems like I unfortunately need to sleep a bit here to make the tests less flaky
-        // Seems like they need some time before they are recognized as processes.
-        std::thread::sleep(std::time::Duration::from_millis(200));
+    pub fn pids(&self, name: &str) -> Result<Vec<Pid>, PidError> {
+        let state_file = self.state_file(name).ok_or(PidError::FileNotFound)?;
 
-        System::new_all()
-            .processes()
-            .values()
-            .filter_map(|p| if p.cmd() == cmd { Some(p.pid()) } else { None })
-            .collect()
-    }
+        let project =
+            std::fs::read_to_string(state_file.path()).map_err(|_| PidError::FileNotFound)?;
+        let project =
+            serde_json::from_str::<Project>(&project).map_err(|_| PidError::ParseError)?;
 
-    pub fn pids(&self, project: WorkerTestProject) -> Vec<Pid> {
-        // Verify that the process is running using sysinfo
-        let cmd = match project {
-            WorkerTestProject::One => self.cmds[0].split_whitespace(),
-            WorkerTestProject::Two => self.cmds[1].split_whitespace(),
-            WorkerTestProject::Three => self.cmds[2].split_whitespace(),
-            WorkerTestProject::Four => self.cmds[3].split_whitespace(),
-            WorkerTestProject::Five => self.cmds[4].split_whitespace(),
-            WorkerTestProject::Six => self.cmds[5].split_whitespace(),
-            WorkerTestProject::Unknown => unreachable!(),
-            WorkerTestProject::GroupOne => unreachable!(),
-            WorkerTestProject::GroupTwo => unreachable!(),
-        }
-        .collect::<Vec<_>>();
+        let cmd = project
+            .command
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>();
 
         // HACK: Seems like I unfortunately need to sleep a bit here to make the tests less flaky
         // Seems like they need some time before they are recognized as processes.
         std::thread::sleep(std::time::Duration::from_millis(200));
 
-        System::new_all()
+        Ok(System::new_all()
             .processes()
             .values()
             .filter_map(|p| if p.cmd() == cmd { Some(p.pid()) } else { None })
-            .collect()
+            .collect())
     }
 }
