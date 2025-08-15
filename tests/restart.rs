@@ -10,7 +10,9 @@ fn test_restart_unknown_project() {
     let project_name = worker.project_name(&WorkerTestProject::Unknown);
 
     let mut cmd = worker.restart(&[&project_name]);
-    cmd.assert().failure();
+    cmd.assert().stdout(format!(
+        "{project_name} is not a project nor a running command\n"
+    ));
 }
 
 #[test]

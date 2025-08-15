@@ -79,7 +79,11 @@ impl FromStr for ActionArgRunning {
         } else if let Some(project) = running.iter().find(|it| it.name == s) {
             Ok(ActionArgRunning::Project(project.clone()))
         } else {
-            println!("{} is not a project or not running", s);
+            if let Some(project) = config.projects.into_iter().find(|it| it.name == s) {
+                println!("{} is not running", project);
+            } else {
+                println!("{} is not a project nor a running command", s);
+            }
             Ok(ActionArgRunning::Group(vec![]))
         }
     }

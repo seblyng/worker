@@ -10,7 +10,9 @@ fn test_stop_unknown_project() {
     let project_name = worker.project_name(&WorkerTestProject::Unknown);
 
     let mut cmd = worker.stop(&[&project_name]);
-    cmd.assert().failure();
+    cmd.assert().stdout(format!(
+        "{project_name} is not a project nor a running command\n",
+    ));
 }
 
 #[test]
@@ -21,10 +23,8 @@ fn test_stop_command_not_running() {
     let project_name = worker.project_name(&project);
 
     let mut cmd = worker.stop(&[&project_name]);
-    cmd.assert().stderr(format!(
-        "Cannot stop project not running: {}\n",
-        worker.project_name(&project)
-    ));
+    cmd.assert()
+        .stdout(format!("{project_name} is not running\n",));
 }
 
 #[test]
