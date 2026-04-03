@@ -1,5 +1,6 @@
+use std::os::fd::{AsRawFd, RawFd};
+
 use serde::{Deserialize, Serialize};
-use sysinfo::System;
 
 pub enum Fork {
     Parent(libc::pid_t),
@@ -33,6 +34,12 @@ pub fn waitpid(pid: i32) -> Result<libc::pid_t, i32> {
     }
 }
 
+/// Returns true if the child has exited.
+pub fn has_child_exited(pid: i32) -> bool {
+    let mut status: i32 = 0;
+    unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) > 0 }
+}
+
 pub fn stop_pg(sid: i32, signal: &Signal) -> Result<(), i32> {
     match unsafe { libc::killpg(sid, signal.to_owned() as i32) } {
         0 => Ok(()),
@@ -40,13 +47,69 @@ pub fn stop_pg(sid: i32, signal: &Signal) -> Result<(), i32> {
     }
 }
 
-pub fn has_processes_running(sid: libc::pid_t) -> bool {
-    let mut sys = System::new();
-    sys.refresh_all();
-    sys.processes().iter().any(|(_, p)| {
-        p.session_id()
-            .is_some_and(|session_id| session_id.as_u32() == sid as u32)
-    })
+pub fn dup2(src: i32, dst: i32) -> i32 {
+    unsafe { libc::dup2(src, dst) }
+}
+
+pub fn signal(signum: i32, handler: usize) -> usize {
+    unsafe { libc::signal(signum, handler) }
+}
+
+pub fn set_nonblocking(fd: RawFd) {
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    }
+}
+
+#[derive(Default)]
+pub struct PollSet {
+    fds: Vec<libc::pollfd>,
+}
+
+pub enum PollResult {
+    Ready,
+    Timeout,
+    Interrupted,
+    Error,
+}
+
+impl PollSet {
+    pub fn add(&mut self, fd: &impl AsRawFd) -> usize {
+        let idx = self.fds.len();
+        self.fds.push(libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        });
+        idx
+    }
+
+    pub fn wait(&mut self, timeout_ms: i32) -> PollResult {
+        let ret = unsafe {
+            libc::poll(
+                self.fds.as_mut_ptr(),
+                self.fds.len() as libc::nfds_t,
+                timeout_ms,
+            )
+        };
+        match ret {
+            _ if ret > 0 => PollResult::Ready,
+            0 => PollResult::Timeout,
+            _ if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) => {
+                PollResult::Interrupted
+            }
+            _ => PollResult::Error,
+        }
+    }
+
+    pub fn is_readable(&self, index: usize) -> bool {
+        self.fds[index].revents & libc::POLLIN != 0
+    }
+
+    pub fn is_hungup(&self, index: usize) -> bool {
+        self.fds[index].revents & libc::POLLHUP != 0 && self.fds[index].revents & libc::POLLIN == 0
+    }
 }
 
 #[derive(Deserialize, Clone, Debug, Serialize, Hash, PartialEq, Eq)]

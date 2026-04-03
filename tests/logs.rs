@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::{WorkerTestConfig, WorkerTestProject};
 use uuid::Uuid;
@@ -24,21 +24,19 @@ fn test_logs_success() {
     let mut cmd = worker.start(&[&project_name]);
     cmd.assert().success();
 
-    let timeout = Duration::new(1, 0);
-    let start = Instant::now();
+    // Give the process time to produce output
+    std::thread::sleep(Duration::from_millis(500));
 
-    // Try multiple times since it may not output immediately
-    while Instant::now().duration_since(start) < timeout {
-        let mut cmd = worker.logs(&[&project_name]);
-        cmd.assert().success();
+    let mut cmd = worker.logs(&[&project_name]);
+    cmd.timeout(Duration::from_secs(2));
+    let output = cmd.output().expect("Failed to run logs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
-        let output = &cmd.output().unwrap().stdout;
-        let stdout = std::str::from_utf8(output).unwrap();
-        if stdout.contains("Hello from mock!") {
-            return;
-        }
-    }
-    unreachable!("Couldn't find output in 1 second")
+    assert!(
+        stdout.contains("Hello from mock!"),
+        "Expected output in logs, got: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -51,20 +49,17 @@ fn test_logs_command_success() {
     let mut cmd = worker.start(&["-n", &uuid.to_string(), "-c", &echo_cmd]);
     cmd.assert().success();
 
-    let timeout = Duration::new(1, 0);
-    let start = Instant::now();
+    // Give the process time to produce output
+    std::thread::sleep(Duration::from_millis(500));
 
-    // Try multiple times since it may not output immediately
-    while Instant::now().duration_since(start) < timeout {
-        let mut cmd = worker.logs(&[&uuid.to_string()]);
-        cmd.assert().success();
+    let mut cmd = worker.logs(&[&uuid.to_string()]);
+    cmd.timeout(Duration::from_secs(2));
+    let output = cmd.output().expect("Failed to run logs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
-        let output = &cmd.output().unwrap().stdout;
-        let stdout = std::str::from_utf8(output).unwrap();
-        println!("stdout: {}", stdout);
-        if stdout.contains(&format!("Hello from {}!", uuid)) {
-            return;
-        }
-    }
-    unreachable!("Couldn't find output in 1 second")
+    assert!(
+        stdout.contains(&format!("Hello from {}!", uuid)),
+        "Expected output in logs, got: {}",
+        stdout
+    );
 }
