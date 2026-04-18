@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use std::fs::DirEntry;
 
-use assert_cmd::{cargo::cargo_bin, Command};
+use assert_cmd::{Command, cargo::cargo_bin};
 use serde::Deserialize;
 use sysinfo::{Pid, System};
 use tempfile::TempDir;
@@ -39,7 +39,7 @@ pub enum WorkerTestGroup {
 }
 
 pub struct WorkerTestConfig {
-    dir: TempDir,
+    pub dir: TempDir,
     cmds: [String; 6],
     names: [Uuid; 6],
     groups: [Uuid; 2],
@@ -162,6 +162,10 @@ impl WorkerTestConfig {
 
     pub fn status(&self) -> Command {
         self.run_cmd("status", None)
+    }
+
+    pub fn attach(&self, project: &[&str]) -> Command {
+        self.run_cmd("attach", Some(project))
     }
 
     // Depends on `new()`. Used for asserting that the projects have actually started

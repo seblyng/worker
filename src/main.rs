@@ -1,17 +1,27 @@
 use std::time::{Duration, Instant};
 
-use clap::{command, ArgGroup, Parser};
+use clap::{ArgGroup, Parser, command};
 use config::WorkerConfig;
 use itertools::Itertools;
 use project::Project;
 
-use crate::project::RunningProject;
+use crate::{
+    project::RunningProject,
+    pty_client::{DetachReason, PtyClient},
+};
 
 pub mod config;
 pub mod libc;
 pub mod project;
+pub mod pty;
+pub mod pty_client;
+pub mod pty_server;
 
-fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
+fn start(
+    config: &WorkerConfig,
+    projects: Vec<Project>,
+    verbose: bool,
+) -> Result<(), anyhow::Error> {
     let (running, not_running) = config.partition_projects(projects)?;
 
     for project in running {
@@ -19,7 +29,22 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
     }
 
     for project in not_running {
+        if verbose {
+            eprintln!("Starting: {}", project.name);
+            eprintln!("  Command: {:?}", project.command);
+            eprintln!("  Cwd: {}", project.cwd);
+            eprintln!("  Socket: {}", config.sock_file(&project).display());
+            if let Some(ref envs) = project.envs {
+                eprintln!("  Envs: {:?}", envs);
+            }
+        }
+
         project.start(config)?;
+
+        if verbose {
+            let client = PtyClient::connect(&config.sock_file(&project))?;
+            client.event_loop(true);
+        }
     }
 
     Ok(())
@@ -50,7 +75,11 @@ fn stop(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyh
 
 fn restart(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyhow::Error> {
     stop(config, projects.clone())?;
-    start(config, projects.into_iter().map(|p| p.into()).collect())?;
+    start(
+        config,
+        projects.into_iter().map(|p| p.into()).collect(),
+        false,
+    )?;
 
     Ok(())
 }
@@ -59,6 +88,23 @@ fn run(config: &WorkerConfig, project: Project) -> Result<(), anyhow::Error> {
     project.start_dependencies(config)?;
 
     project.run()?;
+
+    Ok(())
+}
+
+fn attach(config: &WorkerConfig, args: AttachArgs) -> Result<(), anyhow::Error> {
+    let client = PtyClient::connect(&config.sock_file(&args.project))?;
+
+    let reason = client.event_loop(false);
+
+    let msg = match reason {
+        DetachReason::UserDetach => "Detached from process (Ctrl+D)",
+        DetachReason::ProcessExited => "Process exited",
+        DetachReason::ConnectionLost => "Connection lost",
+    };
+    // Print on stdout (same fd as PTY output) so they don't interleave.
+    // Clear the current line in case output ended mid-line.
+    println!("\x1b[2K\r{}", msg);
 
     Ok(())
 }
@@ -88,26 +134,8 @@ fn list(config: &WorkerConfig, args: ListArgs) -> Result<(), anyhow::Error> {
 }
 
 fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
-    let mut cmd = std::process::Command::new("tail");
-
-    if args.follow {
-        cmd.arg("-f");
-    }
-
-    let mut child = cmd
-        .args(["-n", &args.number.to_string()])
-        .arg(config.log_file(&args.project))
-        .spawn()?;
-
-    if args.follow {
-        while args.project.is_running() {
-            std::thread::sleep(Duration::from_secs(2));
-        }
-        child.kill()?;
-    } else {
-        child.wait()?;
-    }
-
+    let client = PtyClient::connect(&config.sock_file(&args.project))?;
+    client.event_loop(true);
     Ok(())
 }
 
@@ -163,6 +191,10 @@ struct StartArgs {
         conflicts_with = "projects"
     )]
     name: Option<String>,
+
+    /// Print debug info and tail the log after starting
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -200,11 +232,6 @@ struct RunArgs {
 #[derive(Debug, Parser)]
 struct LogsArgs {
     project: RunningProject,
-    #[arg(short, long)]
-    follow: bool,
-
-    #[arg(short, long = "lines", default_value = "50")]
-    number: i32,
 }
 
 #[derive(Debug, Parser)]
@@ -217,6 +244,11 @@ struct StatusArgs {
 struct ListArgs {
     #[arg(short, long, help = "Only print name of the project")]
     quiet: bool,
+}
+
+#[derive(Debug, Parser)]
+struct AttachArgs {
+    project: RunningProject,
 }
 
 #[derive(Parser, Debug)]
@@ -235,6 +267,8 @@ enum SubCommands {
     List(ListArgs),
     /// Print out logs for the specified project.
     Logs(LogsArgs),
+    /// Attach to a running process (Ctrl+D to detach)
+    Attach(AttachArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -261,13 +295,14 @@ fn main() -> Result<(), anyhow::Error> {
 
     match cli.subcommand {
         SubCommands::Start(args) => {
+            let verbose = args.verbose;
             let projects = match (args.projects, args.name, args.cmd) {
                 (Some(projects), None, None) => unique(projects),
                 (None, Some(name), Some(command)) => vec![Project::from_cmd(name, command)],
                 _ => unreachable!("Only one of project or command should be specified"),
             };
 
-            start(&config, projects)?
+            start(&config, projects, verbose)?
         }
         SubCommands::Stop(args) => stop(
             &config,
@@ -303,6 +338,7 @@ fn main() -> Result<(), anyhow::Error> {
         SubCommands::Status(args) => status(&config, args)?,
         SubCommands::List(args) => list(&config, args)?,
         SubCommands::Logs(args) => logs(&config, args)?,
+        SubCommands::Attach(args) => attach(&config, args)?,
     }
 
     Ok(())

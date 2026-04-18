@@ -1,12 +1,18 @@
-use std::{fs::File, path::PathBuf, str::FromStr};
+use std::{
+    collections::hash_map::DefaultHasher,
+    fs::File,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+    str::FromStr,
+};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use itertools::{Either, Itertools};
 use serde::Deserialize;
 
 use crate::{
-    project::{Project, RunningProject, WorkerProject},
     ActionArg, ActionArgRunning,
+    project::{Project, RunningProject, WorkerProject},
 };
 
 const CONFIG_FILE: &str = ".worker.toml";
@@ -93,7 +99,7 @@ impl FromStr for ActionArgRunning {
 pub struct WorkerConfig {
     pub projects: Vec<Project>,
     state_dir: PathBuf,
-    log_dir: PathBuf,
+    sock_dir: PathBuf,
 }
 
 impl WorkerConfig {
@@ -102,10 +108,10 @@ impl WorkerConfig {
         let config_string = std::fs::read_to_string(base_dir.join(CONFIG_FILE))?;
 
         let state_dir = base_dir.join(".worker/state");
-        let log_dir = base_dir.join(".worker/log");
+        let sock_dir = base_dir.join(".worker/sock");
 
         std::fs::create_dir_all(&state_dir)?;
-        std::fs::create_dir_all(&log_dir)?;
+        std::fs::create_dir_all(&sock_dir)?;
 
         // Deserialize the TOML string into the Config struct
         let config: Config = toml::from_str(&config_string)?;
@@ -113,12 +119,19 @@ impl WorkerConfig {
         Ok(Self {
             projects: config.project,
             state_dir,
-            log_dir,
+            sock_dir,
         })
     }
 
-    pub fn log_file<T: WorkerProject>(&self, project: &T) -> PathBuf {
-        self.log_dir.join(project.name())
+    pub fn sock_file<T: WorkerProject>(&self, project: &T) -> PathBuf {
+        // Unix socket paths are limited to ~104 chars on macOS.
+        // Use a hash of the full sock_dir + project name to create a short
+        // but unique path under /tmp.
+        let full_path = self.sock_dir.join(project.name());
+        let mut hasher = DefaultHasher::new();
+        full_path.hash(&mut hasher);
+        let hash = hasher.finish();
+        PathBuf::from(format!("/tmp/worker-{:016x}.sock", hash))
     }
 
     pub fn get_state(&self, name: &str) -> Result<Option<RunningProject>, anyhow::Error> {
