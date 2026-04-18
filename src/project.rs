@@ -123,7 +123,7 @@ impl Project {
                                 signal(libc::SIGINT, libc::SIG_IGN);
                                 signal(libc::SIGQUIT, libc::SIG_IGN);
                                 signal(libc::SIGTSTP, libc::SIG_IGN);
-                                let server = PtyServer::bind(&sock_path)?;
+                                let server = PtyServer::bind(&sock_path, rows, cols)?;
                                 // Signal readiness to intermediate
                                 let _ = pipe_w.write_all(&[1u8]);
                                 drop(pipe_w);

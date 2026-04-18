@@ -57,8 +57,6 @@ pub fn get_terminal_size() -> (u16, u16) {
 pub enum Message {
     /// Resize the PTY.
     Resize { rows: u16, cols: u16 },
-    /// Request the current screen state with escape sequences and colors.
-    DumpScreen,
     /// Request the current screen state as plain text.
     DumpText,
     /// Detach from the session.
@@ -69,7 +67,6 @@ pub enum Message {
 
 impl Message {
     const RESIZE: u8 = 0x01;
-    const DUMP_SCREEN: u8 = 0x02;
     const DUMP_TEXT: u8 = 0x03;
     const CTRL_D: u8 = 0x04;
 
@@ -81,7 +78,6 @@ impl Message {
                 buf.extend_from_slice(&cols.to_be_bytes());
                 buf
             }
-            Message::DumpScreen => vec![Self::DUMP_SCREEN],
             Message::DumpText => vec![Self::DUMP_TEXT],
             Message::Detach => vec![Self::CTRL_D],
             Message::Input(data) => data.clone(),
@@ -96,9 +92,6 @@ impl Message {
             let rows = u16::from_be_bytes([buf[1], buf[2]]);
             let cols = u16::from_be_bytes([buf[3], buf[4]]);
             return Message::Resize { rows, cols };
-        }
-        if buf.len() == 1 && buf[0] == Self::DUMP_SCREEN {
-            return Message::DumpScreen;
         }
         if buf.len() == 1 && buf[0] == Self::DUMP_TEXT {
             return Message::DumpText;
@@ -122,6 +115,11 @@ pub fn enter_raw_mode() -> Option<libc::termios> {
         if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw) != 0 {
             return None;
         }
+        // Switch to alternate screen so avt.dump()'s absolute cursor
+        // positioning lands on a fresh (1,1)-based buffer instead of
+        // overlapping the shell history.
+        let _ = std::io::Write::write_all(&mut std::io::stdout(), b"\x1b[?1049h\x1b[H");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         Some(original)
     }
 }

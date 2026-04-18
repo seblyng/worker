@@ -7,7 +7,6 @@ use project::Project;
 
 use crate::{
     project::RunningProject,
-    pty::Message,
     pty_client::{DetachReason, PtyClient},
 };
 
@@ -94,8 +93,7 @@ fn run(config: &WorkerConfig, project: Project) -> Result<(), anyhow::Error> {
 }
 
 fn attach(config: &WorkerConfig, args: AttachArgs) -> Result<(), anyhow::Error> {
-    let mut client = PtyClient::connect(&config.sock_file(&args.project))?;
-    client.send(Message::DumpScreen);
+    let client = PtyClient::connect(&config.sock_file(&args.project))?;
 
     let reason = client.event_loop(false);
 
@@ -136,8 +134,7 @@ fn list(config: &WorkerConfig, args: ListArgs) -> Result<(), anyhow::Error> {
 }
 
 fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
-    let mut client = PtyClient::connect(&config.sock_file(&args.project))?;
-    client.send(Message::DumpScreen);
+    let client = PtyClient::connect(&config.sock_file(&args.project))?;
     client.event_loop(true);
     Ok(())
 }

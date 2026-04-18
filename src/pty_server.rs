@@ -4,7 +4,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
 use crate::libc::{PollResult, PollSet, has_child_exited};
-use crate::pty::{Message, get_terminal_size, set_window_size};
+use crate::pty::{Message, set_window_size};
 
 pub enum ServerEvent<'a> {
     /// PTY master produced output.
@@ -25,11 +25,10 @@ pub struct PtyServer {
 }
 
 impl PtyServer {
-    pub fn bind(path: &Path) -> std::io::Result<Self> {
+    pub fn bind(path: &Path, rows: u16, cols: u16) -> std::io::Result<Self> {
         let _ = std::fs::remove_file(path);
         let listener = UnixListener::bind(path)?;
         listener.set_nonblocking(true)?;
-        let (rows, cols) = get_terminal_size();
         Ok(PtyServer {
             listener,
             clients: Vec::new(),
@@ -105,10 +104,6 @@ impl PtyServer {
                         Message::Resize { rows, cols } => {
                             return ServerEvent::ClientResize(rows, cols);
                         }
-                        Message::DumpScreen => {
-                            let screen = self.vt.dump().replace('\u{9b}', "\x1b[");
-                            let _ = self.clients[i].write_all(screen.as_bytes());
-                        }
                         Message::DumpText => {
                             for line in self.vt.text() {
                                 if !line.is_empty() {
@@ -134,12 +129,18 @@ impl PtyServer {
 
         // Read the initial resize (blocking, before set_nonblocking)
         let mut buf = [0u8; 5];
-        if let Ok(n) = stream.read(&mut buf) {
-            if let Message::Resize { rows, cols } = Message::decode(&buf[..n]) {
-                set_window_size(master, rows, cols);
-                self.vt.resize(cols as usize, rows as usize);
-            }
+        if let Ok(n) = stream.read(&mut buf)
+            && let Message::Resize { rows, cols } = Message::decode(&buf[..n])
+        {
+            set_window_size(master, rows, cols);
+            self.vt.resize(cols as usize, rows as usize);
         }
+
+        // Send the current screen state before joining the broadcast list.
+        // Otherwise live PTY output can reach the client before the dump,
+        // and the dump's cursor escapes smear that output.
+        let screen = self.vt.dump().replace('\u{9b}', "\x1b[");
+        let _ = stream.write_all(screen.as_bytes());
 
         stream.set_nonblocking(true).ok();
         self.clients.push(stream);
