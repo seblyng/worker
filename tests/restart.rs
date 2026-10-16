@@ -259,3 +259,37 @@ fn test_restart_command_success() {
 
     assert_ne!(pid, worker.pids("api").unwrap()[0]);
 }
+
+#[test]
+fn test_restart_uses_lifecycle() {
+    let marker = uuid::Uuid::new_v4();
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
+
+            [project.lifecycle]
+            stop = ["sh", "-c", "pkill -f '[w]orker-restart-{marker}' && echo 'Stopped by lifecycle!'"]
+            "#,
+            ctx.mock_command(&format!("worker-restart-{marker}")),
+        )
+    });
+
+    worker.start(&["api"]).assert().success();
+
+    let pid = worker.pids("api").unwrap()[0];
+
+    worker
+        .restart(&["api"])
+        .assert()
+        .success()
+        .stdout("Stopped by lifecycle!\n");
+
+    let pids = worker.pids("api").unwrap();
+
+    assert_eq!(pids.len(), 1);
+    assert_ne!(pid, pids[0]);
+}

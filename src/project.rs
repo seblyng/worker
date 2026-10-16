@@ -10,13 +10,20 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     config::WorkerConfig,
-    libc::{fork, has_processes_running, setsid, stop_pg, waitpid, Fork, Signal},
+    libc::{Fork, Signal, fork, has_processes_running, setsid, stop_pg, waitpid},
 };
+
+#[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq, Default)]
+pub struct Lifecycle {
+    pub stop: Option<Vec<String>>,
+    pub logs: Option<Vec<String>>,
+    pub status: Option<Vec<String>>,
+}
 
 /// Project deserialized from config file
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq, Default)]
@@ -29,6 +36,7 @@ pub struct Project {
     pub envs: Option<HashMap<String, String>>,
     pub group: Option<Vec<String>>,
     pub dependencies: Option<Vec<String>>,
+    pub lifecycle: Option<Lifecycle>,
 }
 
 /// Project with process id
@@ -43,6 +51,7 @@ pub struct RunningProject {
     pub group: Option<Vec<String>>,
     pub dependencies: Option<Vec<String>>,
     pub pid: i32,
+    pub lifecycle: Option<Lifecycle>,
 }
 
 impl Project {
@@ -59,6 +68,7 @@ impl Project {
             envs: None,
             group: None,
             dependencies: None,
+            lifecycle: None,
         }
     }
 
@@ -71,7 +81,20 @@ impl Project {
             }
             Fork::Child => {
                 let sid = setsid().expect("Couldn't setsid");
-                config.store_state(sid, self)?;
+                let running = RunningProject {
+                    name: self.name.clone(),
+                    command: self.command.clone(),
+                    cwd: self.cwd.clone(),
+                    display: self.display.clone(),
+                    stop_signal: self.stop_signal.clone(),
+                    envs: self.envs.clone(),
+                    group: self.group.clone(),
+                    dependencies: self.dependencies.clone(),
+                    pid: sid,
+                    lifecycle: self.lifecycle.clone(),
+                };
+
+                config.store_state(&running)?;
 
                 match fork().expect("Couldn't fork inner") {
                     Fork::Parent(_) => std::process::exit(0),
@@ -88,9 +111,9 @@ impl Project {
                             .args(&self.command[1..])
                             .envs(self.envs.clone().unwrap_or_default())
                             .current_dir(&self.cwd)
+                            .stdin(Stdio::null())
                             .stdout(unsafe { Stdio::from_raw_fd(fd) })
                             .stderr(unsafe { Stdio::from_raw_fd(fd) })
-                            .stdin(Stdio::null())
                             .exec();
                     }
                 };
@@ -126,18 +149,58 @@ impl Project {
     }
 
     pub fn is_running(&self, config: &WorkerConfig) -> Result<bool, anyhow::Error> {
-        Ok(config.running()?.iter().any(|it| it.name == self.name))
+        Ok(config.running()?.any(|it| it.name == self.name))
     }
 }
 
 impl RunningProject {
     pub fn stop(&self) -> Result<(), anyhow::Error> {
-        let signal = self.stop_signal.as_ref().unwrap_or(&Signal::SIGINT);
-        stop_pg(self.pid, signal).map_err(|e| anyhow!("Error trying to stop project: {e}"))
+        if let Some(ref lifecycle) = self.lifecycle
+            && let Some(ref stop) = lifecycle.stop
+        {
+            let _ = std::process::Command::new(&stop[0])
+                .args(&stop[1..])
+                .envs(self.envs.clone().unwrap_or_default())
+                .current_dir(&self.cwd)
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn()?
+                .wait();
+            Ok(())
+        } else {
+            let signal = self.stop_signal.as_ref().unwrap_or(&Signal::SIGINT);
+            stop_pg(self.pid, signal).map_err(|e| anyhow!("Error trying to stop project: {e}"))
+        }
     }
 
     pub fn is_running(&self) -> bool {
-        has_processes_running(self.pid)
+        if let Some(ref lifecycle) = self.lifecycle
+            && let Some(ref status) = lifecycle.status
+        {
+            std::process::Command::new(&status[0])
+                .args(&status[1..])
+                .envs(self.envs.clone().unwrap_or_default())
+                .current_dir(&self.cwd)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
+        } else {
+            has_processes_running(self.pid)
+        }
+    }
+
+    pub fn update(&mut self, project: &Project) {
+        self.command = project.command.clone();
+        self.cwd = project.cwd.clone();
+        self.display = project.display.clone();
+        self.stop_signal = project.stop_signal.clone();
+        self.envs = project.envs.clone();
+        self.group = project.group.clone();
+        self.dependencies = project.dependencies.clone();
+        self.lifecycle = project.lifecycle.clone();
     }
 }
 
@@ -152,6 +215,7 @@ impl From<RunningProject> for Project {
             envs: value.envs,
             group: value.group,
             dependencies: value.dependencies,
+            lifecycle: value.lifecycle,
         }
     }
 }
@@ -223,12 +287,9 @@ impl FromStr for RunningProject {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let config = WorkerConfig::new()?;
         let project = config
-            .get_state(s)?
+            .running()?
+            .find(|it| it.name == s)
             .ok_or_else(|| anyhow!("Project {} is not running or does not exist", s))?;
-
-        if !has_processes_running(project.pid) {
-            return Err(anyhow!("{} is not running", project));
-        }
 
         Ok(project)
     }

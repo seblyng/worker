@@ -86,3 +86,48 @@ fn test_status_multiple_running() {
         .stdout(predicate::str::contains("database"))
         .stdout(predicate::str::contains("frontend").not());
 }
+
+#[test]
+fn test_status_uses_lifecycle_for_status() {
+    let worker = WorkerTest::with_config(|_| {
+        r#"
+            [[project]]
+            name = "api"
+            command = ["false"]
+            cwd = "/"
+
+            [project.lifecycle]
+            status = ["true"]
+            "#
+        .to_string()
+    });
+
+    worker.start(&["api"]).assert().success();
+
+    worker
+        .status()
+        .assert()
+        .success()
+        .stdout("api is running\n");
+}
+
+#[test]
+fn test_failed_lifecycle_status_removes_state() {
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
+
+            [project.lifecycle]
+            status = ["false"]
+            "#,
+            ctx.mock_command("api"),
+        )
+    });
+
+    worker.start(&["api"]).assert().success();
+    worker.status().assert().success().stdout("");
+}

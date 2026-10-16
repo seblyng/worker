@@ -289,3 +289,33 @@ fn test_stop_command_success() {
 
     assert_eq!(Err(PidError::FileNotFound), worker.pids("api"));
 }
+
+#[test]
+fn test_stop_uses_lifecycle() {
+    let marker = uuid::Uuid::new_v4();
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
+
+            [project.lifecycle]
+            stop = ["sh", "-c", "pkill -f '[w]orker-stop-{marker}' && echo 'Stopped by lifecycle!'"]
+            "#,
+            ctx.mock_command(&format!("worker-stop-{marker}")),
+        )
+    });
+
+    worker.start(&["api"]).assert().success();
+
+    worker
+        .stop(&["api"])
+        .assert()
+        .success()
+        .stdout("Stopped by lifecycle!\n");
+
+    worker.status().assert().success().stdout("");
+    assert_eq!(Err(PidError::FileNotFound), worker.pids("api"));
+}

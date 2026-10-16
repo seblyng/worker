@@ -1,17 +1,17 @@
 use std::{fs::File, path::PathBuf, str::FromStr};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use itertools::{Either, Itertools};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    project::{Project, RunningProject, WorkerProject},
     ActionArg, ActionArgRunning,
+    project::{Project, RunningProject, WorkerProject},
 };
 
 const CONFIG_FILE: &str = ".worker.toml";
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub project: Vec<Project>,
 }
@@ -62,11 +62,8 @@ impl FromStr for ActionArgRunning {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let config = WorkerConfig::new()?;
 
-        let running = config.running()?;
-
-        let projects_in_group: Vec<_> = running
-            .clone()
-            .into_iter()
+        let projects_in_group: Vec<_> = config
+            .running()?
             .filter(|it| {
                 it.group
                     .as_ref()
@@ -76,7 +73,7 @@ impl FromStr for ActionArgRunning {
 
         if !projects_in_group.is_empty() {
             Ok(ActionArgRunning::Group(projects_in_group))
-        } else if let Some(project) = running.iter().find(|it| it.name == s) {
+        } else if let Some(project) = config.running()?.find(|it| it.name == s) {
             Ok(ActionArgRunning::Project(project.clone()))
         } else {
             if let Some(project) = config.projects.into_iter().find(|it| it.name == s) {
@@ -109,51 +106,31 @@ impl WorkerConfig {
 
         // Deserialize the TOML string into the Config struct
         let config: Config = toml::from_str(&config_string)?;
-
-        Ok(Self {
+        let config = Self {
             projects: config.project,
-            state_dir,
+            state_dir: state_dir.clone(),
             log_dir,
-        })
+        };
+
+        for project in &config.projects {
+            let path = state_dir.join(&project.name);
+            if path.exists() {
+                let str = std::fs::read_to_string(&path)?;
+                let mut running_project = serde_json::from_str::<RunningProject>(&str)?;
+                running_project.update(project);
+                config.store_state(&running_project)?;
+            }
+        }
+
+        Ok(config)
     }
 
     pub fn log_file<T: WorkerProject>(&self, project: &T) -> PathBuf {
         self.log_dir.join(project.name())
     }
 
-    pub fn get_state(&self, name: &str) -> Result<Option<RunningProject>, anyhow::Error> {
-        let project = std::fs::read_dir(self.state_dir.as_path())?.find_map(|entry| {
-            let path = entry.ok()?.path();
-            let file_name = path.file_name()?.to_str()?;
-            let (project_name, pid) = file_name.rsplit_once('-').context("No - in string").ok()?;
-            if name == project_name {
-                let str = std::fs::read_to_string(&path).ok()?;
-                let project = serde_json::from_str::<Project>(&str)
-                    .context("Couldn't parse project from state file")
-                    .ok()?;
-
-                Some(RunningProject {
-                    name: project.name,
-                    command: project.command,
-                    cwd: project.cwd,
-                    display: project.display,
-                    stop_signal: project.stop_signal,
-                    envs: project.envs,
-                    group: project.group,
-                    pid: pid.parse::<i32>().ok()?,
-                    dependencies: project.dependencies,
-                })
-            } else {
-                None
-            }
-        });
-
-        Ok(project)
-    }
-
-    pub fn store_state(&self, pid: i32, project: &Project) -> Result<(), anyhow::Error> {
-        let filename = format!("{}-{}", project.name, pid);
-        let state_file = self.state_dir.join(filename);
+    pub fn store_state(&self, project: &RunningProject) -> Result<(), anyhow::Error> {
+        let state_file = self.state_dir.join(&project.name);
 
         let file = File::create(state_file).expect("Couldn't create state file");
         serde_json::to_writer(file, &project).expect("Couldn't write to state file");
@@ -161,25 +138,21 @@ impl WorkerConfig {
         Ok(())
     }
 
-    // Try to get vec of running projects. Try to remove the state file if the process is not running
-    pub fn running(&self) -> Result<Vec<RunningProject>, anyhow::Error> {
-        let projects = std::fs::read_dir(self.state_dir.as_path())?
-            .filter_map(|entry| {
-                let path = entry.ok()?.path();
-                let (name, _) = path
-                    .file_name()?
-                    .to_str()?
-                    .rsplit_once('-')
-                    .context("No - in string")
-                    .ok()?;
-                if let Ok(running_project) = RunningProject::from_str(name) {
-                    Some(running_project)
-                } else {
-                    let _ = std::fs::remove_file(path);
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+    pub fn running(&self) -> Result<impl Iterator<Item = RunningProject>, anyhow::Error> {
+        let projects = std::fs::read_dir(self.state_dir.as_path())?.filter_map(|entry| {
+            let path = entry.ok()?.path();
+            let str = std::fs::read_to_string(&path).ok()?;
+            let project = serde_json::from_str::<RunningProject>(&str)
+                .context("Couldn't parse project from state file")
+                .ok()?;
+
+            if !project.is_running() {
+                let _ = std::fs::remove_file(path);
+                return None;
+            }
+
+            Some(project)
+        });
 
         Ok(projects)
     }
@@ -192,9 +165,9 @@ impl WorkerConfig {
         T: WorkerProject + Into<Project>,
     {
         // Partition map to get project with pid set
-        let running_projects = self.running()?;
+        let mut running_projects = self.running()?;
         let (running, not_running): (Vec<_>, Vec<_>) = projects.into_iter().partition_map(|rp| {
-            match running_projects.iter().find(|p| p.name == rp.name()) {
+            match running_projects.find(|p| p.name == rp.name()) {
                 Some(p) => Either::Left(p.to_owned()),
                 None => Either::Right(rp.into()),
             }
