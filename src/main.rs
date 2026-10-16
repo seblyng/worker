@@ -1,11 +1,14 @@
 use std::time::{Duration, Instant};
 
-use clap::{ArgGroup, Parser};
+use clap::{
+    ArgGroup, CommandFactory, FromArgMatches, Parser,
+    builder::{PossibleValuesParser, TypedValueParser},
+};
 use itertools::Itertools;
 use worker::{
     ActionArg, ActionArgRunning,
     config::WorkerConfig,
-    project::{Project, RunningProject},
+    project::{Project, RunningProject, WorkerProject},
 };
 
 fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
@@ -236,10 +239,48 @@ struct Cli {
     subcommand: SubCommands,
 }
 
-fn main() -> Result<(), anyhow::Error> {
-    let cli = Cli::parse();
+fn project_names<T: WorkerProject>(projects: &[T]) -> Vec<String> {
+    projects
+        .iter()
+        .flat_map(|p| std::iter::once(p.name()).chain(p.groups().iter().map(String::as_str)))
+        .unique()
+        .map(str::to_owned)
+        .collect()
+}
 
-    let config = WorkerConfig::new()?;
+fn main() -> Result<(), anyhow::Error> {
+    let config = WorkerConfig::new();
+    let mut cmd = Cli::command();
+
+    // Keep help and CLI syntax errors available even without a valid config.
+    if let Ok(config) = &config {
+        let names = project_names(&config.projects);
+        let parser = PossibleValuesParser::new(&names).try_map(|name| name.parse::<ActionArg>());
+        cmd = cmd.mut_subcommand("start", |cmd| {
+            cmd.mut_arg("projects", |arg| arg.value_parser(parser))
+        });
+
+        let projects = project_names(&config.running()?.collect::<Vec<_>>());
+        let names: Vec<_> = names.iter().cloned().chain(projects).unique().collect();
+        let parser = PossibleValuesParser::new(names).try_map(|n| n.parse::<ActionArgRunning>());
+
+        for subcommand in ["stop", "restart"] {
+            cmd = cmd.mut_subcommand(subcommand, |cmd| {
+                cmd.mut_arg("projects", |arg| arg.value_parser(parser.clone()))
+            });
+        }
+
+        let names: Vec<_> = config.projects.iter().map(|p| p.name.clone()).collect();
+        let parser = PossibleValuesParser::new(&names).try_map(|name| name.parse::<Project>());
+
+        cmd = cmd.mut_subcommand("run", |cmd| {
+            cmd.mut_arg("project", |arg| arg.value_parser(parser))
+        });
+    }
+
+    let matches = cmd.get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
+    let config = config?;
 
     let unique = |projects: Vec<ActionArg>| {
         projects

@@ -29,21 +29,7 @@ impl FromStr for ActionArg {
             return Ok(arg);
         }
 
-        let project_names: Vec<String> = config.projects.iter().map(|p| p.name.clone()).collect();
-
-        let group_names: Vec<_> = config
-            .projects
-            .iter()
-            .filter_map(|it| it.group.clone())
-            .flatten()
-            .unique()
-            .collect();
-
-        Err(anyhow!(
-            "\nValid projects are {:#?}\n\nValid groups are {:#?}",
-            project_names,
-            group_names
-        ))
+        Err(anyhow!("Unknown project or group: {s}"))
     }
 }
 

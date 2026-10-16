@@ -9,8 +9,8 @@ fn test_restart_unknown_project() {
     worker
         .restart(&["unknown"])
         .assert()
-        .success()
-        .stdout("unknown is not a project nor a running command\n");
+        .failure()
+        .stderr(predicates::str::contains("invalid value 'unknown'"));
 }
 
 #[test]

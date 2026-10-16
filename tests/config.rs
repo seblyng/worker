@@ -60,8 +60,8 @@ fn test_reload_group() {
     worker
         .stop(&["new"])
         .assert()
-        .success()
-        .stdout("new is not a project nor a running command\n");
+        .failure()
+        .stderr(predicate::str::contains("invalid value 'new'"));
 
     assert_eq!(worker.pids("api").unwrap().len(), 1);
 
@@ -144,4 +144,68 @@ fn test_reload_dependencies() {
 
     assert_eq!(worker.pids("cache").unwrap().len(), 1);
     assert_eq!(worker.pids("database").unwrap().len(), 1);
+}
+
+#[test]
+fn test_help_without_config() {
+    let dir = tempfile::TempDir::new().unwrap();
+
+    for args in [vec!["--help"], vec!["start", "--help"]] {
+        assert_cmd::Command::cargo_bin("worker")
+            .unwrap()
+            .current_dir(dir.path())
+            .args(args)
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("Usage:"));
+    }
+}
+
+#[test]
+fn test_unknown_name_lists_projects_and_groups() {
+    let worker = WorkerTest::with_config(|_| {
+        r#"
+        [[project]]
+        name = "api"
+        command = ["true"]
+        cwd = "/"
+        group = ["backend"]
+        "#
+        .into()
+    });
+
+    for mut command in [
+        worker.start(&["unknown"]),
+        worker.stop(&["unknown"]),
+        worker.restart(&["unknown"]),
+    ] {
+        command
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("invalid value 'unknown'"))
+            .stderr(predicates::str::contains("[possible values: api, backend]"));
+    }
+}
+
+#[test]
+fn test_run_invalid_name_lists_only_projects() {
+    let worker = WorkerTest::with_config(|_| {
+        r#"
+        [[project]]
+        name = "api"
+        command = ["true"]
+        cwd = "/"
+        group = ["backend"]
+        "#
+        .into()
+    });
+
+    for name in ["unknown", "backend"] {
+        worker
+            .run(&[name])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains(format!("invalid value '{name}'")))
+            .stderr(predicates::str::contains("[possible values: api]"));
+    }
 }
