@@ -222,6 +222,7 @@ impl From<RunningProject> for Project {
 
 pub trait WorkerProject {
     fn name(&self) -> &str;
+    fn groups(&self) -> &[String];
 }
 
 impl Hash for Project {
@@ -255,6 +256,10 @@ macro_rules! impl_worker_project {
         impl WorkerProject for $project {
             fn name(&self) -> &str {
                 &self.name
+            }
+
+            fn groups(&self) -> &[String] {
+                self.group.as_deref().unwrap_or_default()
             }
         }
     };

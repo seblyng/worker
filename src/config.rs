@@ -9,7 +9,7 @@ use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ActionArg, ActionArgRunning,
+    ActionArg, ActionArgRunning, ProjectArg,
     project::{Project, RunningProject, WorkerProject},
 };
 
@@ -25,39 +25,25 @@ impl FromStr for ActionArg {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let config = WorkerConfig::new()?;
 
-        let projects_in_group: Vec<_> = config
+        if let Some(arg) = resolve(config.projects.iter().cloned(), s) {
+            return Ok(arg);
+        }
+
+        let project_names: Vec<String> = config.projects.iter().map(|p| p.name.clone()).collect();
+
+        let group_names: Vec<_> = config
             .projects
-            .clone()
-            .into_iter()
-            .filter(|it| {
-                it.group
-                    .as_ref()
-                    .is_some_and(|group| group.contains(&s.to_string()))
-            })
+            .iter()
+            .filter_map(|it| it.group.clone())
+            .flatten()
+            .unique()
             .collect();
 
-        if !projects_in_group.is_empty() {
-            Ok(ActionArg::Group(projects_in_group))
-        } else if let Some(project) = config.projects.iter().find(|it| it.name == s) {
-            Ok(ActionArg::Project(project.clone()))
-        } else {
-            let project_names: Vec<String> =
-                config.projects.iter().map(|p| p.name.clone()).collect();
-
-            let group_names: Vec<_> = config
-                .projects
-                .iter()
-                .filter_map(|it| it.group.clone())
-                .flatten()
-                .unique()
-                .collect();
-
-            Err(anyhow!(
-                "\nValid projects are {:#?}\n\nValid groups are {:#?}",
-                project_names,
-                group_names
-            ))
-        }
+        Err(anyhow!(
+            "\nValid projects are {:#?}\n\nValid groups are {:#?}",
+            project_names,
+            group_names
+        ))
     }
 }
 
@@ -66,27 +52,39 @@ impl FromStr for ActionArgRunning {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let config = WorkerConfig::new()?;
 
-        let projects_in_group: Vec<_> = config
-            .running()?
-            .filter(|it| {
-                it.group
-                    .as_ref()
-                    .is_some_and(|group| group.contains(&s.to_string()))
-            })
-            .collect();
-
-        if !projects_in_group.is_empty() {
-            Ok(ActionArgRunning::Group(projects_in_group))
-        } else if let Some(project) = config.running()?.find(|it| it.name == s) {
-            Ok(ActionArgRunning::Project(project.clone()))
-        } else {
-            if let Some(project) = config.projects.iter().find(|it| it.name == s) {
-                println!("{} is not running", project);
-            } else {
-                println!("{} is not a project nor a running command", s);
-            }
-            Ok(ActionArgRunning::Group(vec![]))
+        if let Some(arg) = resolve(config.running()?, s) {
+            return Ok(arg);
         }
+
+        if let Some(project) = config.projects.iter().find(|it| it.name == s) {
+            println!("{} is not running", project);
+        } else {
+            println!("{} is not a project nor a running command", s);
+        }
+
+        Ok(ActionArgRunning::Group(vec![]))
+    }
+}
+
+fn resolve<T: WorkerProject>(
+    projects: impl IntoIterator<Item = T>,
+    name: &str,
+) -> Option<ProjectArg<T>> {
+    let mut group = Vec::new();
+    let mut project = None;
+
+    for p in projects {
+        if p.groups().iter().any(|g| g == name) {
+            group.push(p);
+        } else if project.is_none() && p.name() == name {
+            project = Some(p);
+        }
+    }
+
+    if group.is_empty() {
+        project.map(ProjectArg::Project)
+    } else {
+        Some(ProjectArg::Group(group))
     }
 }
 

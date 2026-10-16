@@ -5,13 +5,10 @@ pub mod project;
 use project::{Project, RunningProject};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ActionArg {
-    Project(Project),
-    Group(Vec<Project>),
+pub enum ProjectArg<T> {
+    Project(T),
+    Group(Vec<T>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ActionArgRunning {
-    Project(RunningProject),
-    Group(Vec<RunningProject>),
-}
+pub type ActionArg = ProjectArg<Project>;
+pub type ActionArgRunning = ProjectArg<RunningProject>;
