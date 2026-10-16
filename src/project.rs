@@ -123,19 +123,9 @@ impl Project {
         Ok(())
     }
 
-    pub fn start_dependencies(&self, config: &WorkerConfig) -> Result<(), anyhow::Error> {
-        if let Some(ref deps) = self.dependencies {
-            for dep in deps {
-                let project = Project::from_str(dep)?;
-                if !project.is_running(config)? {
-                    project.start(config)?;
-                }
-            }
-        }
-        Ok(())
-    }
+    pub fn run(&self, config: &WorkerConfig) -> Result<(), anyhow::Error> {
+        self.start_dependencies(config)?;
 
-    pub fn run(&self) -> Result<(), anyhow::Error> {
         let _ = std::process::Command::new(&self.command[0])
             .args(&self.command[1..])
             .envs(self.envs.clone().unwrap_or_default())
@@ -150,6 +140,18 @@ impl Project {
 
     pub fn is_running(&self, config: &WorkerConfig) -> Result<bool, anyhow::Error> {
         Ok(config.running()?.any(|it| it.name == self.name))
+    }
+
+    fn start_dependencies(&self, config: &WorkerConfig) -> Result<(), anyhow::Error> {
+        if let Some(ref deps) = self.dependencies {
+            for dep in deps {
+                let project = Project::from_str(dep)?;
+                if !project.is_running(config)? {
+                    project.start(config)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 

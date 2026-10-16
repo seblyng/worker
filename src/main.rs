@@ -54,14 +54,6 @@ fn restart(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), a
     Ok(())
 }
 
-fn run(config: &WorkerConfig, project: Project) -> Result<(), anyhow::Error> {
-    project.start_dependencies(config)?;
-
-    project.run()?;
-
-    Ok(())
-}
-
 fn status(config: &WorkerConfig, args: StatusArgs) -> Result<(), anyhow::Error> {
     for project in config.running()? {
         if args.quiet {
@@ -331,7 +323,7 @@ fn main() -> Result<(), anyhow::Error> {
                 (None, Some(name), Some(command)) => Project::from_cmd(name, command),
                 _ => unreachable!("Only one of project or command should be specified"),
             };
-            run(&config, project)?
+            project.run(&config)?
         }
         SubCommands::Status(args) => status(&config, args)?,
         SubCommands::List(args) => list(&config, args)?,
