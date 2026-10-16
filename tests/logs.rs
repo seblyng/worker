@@ -75,3 +75,29 @@ fn test_logs_command_success() {
         );
     }
 }
+
+#[test]
+fn test_logs_uses_lifecycle() {
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
+
+            [project.lifecycle]
+            logs = ["echo", "Hello from lifecycle!"]
+            "#,
+            ctx.mock_command("api"),
+        )
+    });
+
+    worker.start(&["api"]).assert().success();
+
+    worker
+        .logs(&["api"])
+        .assert()
+        .success()
+        .stdout("Hello from lifecycle!\n");
+}

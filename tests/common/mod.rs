@@ -1,16 +1,13 @@
 #![allow(dead_code)]
 
 use assert_cmd::{Command, cargo::cargo_bin};
-use serde::Deserialize;
 use sysinfo::{Pid, System};
 use tempfile::TempDir;
 use uuid::Uuid;
-
-#[derive(Debug, Deserialize)]
-pub struct Project {
-    pub name: String,
-    pub command: Vec<String>,
-}
+use worker::{
+    config::Config,
+    project::{Project, RunningProject},
+};
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum PidError {
@@ -46,7 +43,6 @@ impl WorkerTest {
             instance_id: Uuid::new_v4(),
         };
 
-        // The real CLI discovers, reads, and parses this file on every invocation.
         std::fs::write(dir.path().join(".worker.toml"), config(&context)).unwrap();
 
         Self { dir }
@@ -95,39 +91,45 @@ impl WorkerTest {
         self.run_cmd("status", None)
     }
 
+    pub fn update_config(&self, name: &str, update: impl FnOnce(&mut Project)) {
+        let path = self.dir.path().join(".worker.toml");
+        let contents = std::fs::read_to_string(&path).expect("Couldn't read config");
+        let mut config: Config = toml::from_str(&contents).expect("Couldn't parse config");
+
+        let project = config
+            .project
+            .iter_mut()
+            .find(|project| project.name == name)
+            .unwrap_or_else(|| panic!("Project {name:?} not found in config"));
+
+        update(project);
+
+        let contents = toml::to_string(&config).expect("Couldn't serialize config");
+        std::fs::write(path, contents).expect("Couldn't write config");
+    }
+
     pub fn pids(&self, name: &str) -> Result<Vec<Pid>, PidError> {
         let path = self.dir.path().join(".worker/state");
         let dir = path.read_dir().map_err(|_| PidError::FileNotFound)?;
 
         let mut sessions = Vec::new();
         for entry in dir {
-            let entry = entry.unwrap();
-            if !entry
-                .file_name()
-                .to_string_lossy()
-                .rsplit_once('-')
-                .is_some_and(|(project, _)| project == name)
-            {
+            let entry = entry.unwrap().path();
+            let project = std::fs::read_to_string(entry).map_err(|_| PidError::FileNotFound)?;
+            let project = serde_json::from_str::<RunningProject>(&project)
+                .map_err(|_| PidError::ParseError)?;
+
+            if project.name != name {
                 continue;
             }
-            let state_file = entry;
 
-            let filename = state_file.file_name();
-            let filename = filename.to_string_lossy();
-            let (_, session_id) = filename.rsplit_once('-').ok_or(PidError::ParseError)?;
-            let session_id = session_id
-                .parse::<u32>()
-                .map_err(|_| PidError::ParseError)?;
-            let project =
-                std::fs::read_to_string(state_file.path()).map_err(|_| PidError::FileNotFound)?;
-            let project =
-                serde_json::from_str::<Project>(&project).map_err(|_| PidError::ParseError)?;
             let command = project
                 .command
                 .into_iter()
                 .map(std::ffi::OsString::from)
                 .collect::<Vec<_>>();
-            sessions.push((Pid::from_u32(session_id), command));
+
+            sessions.push((Pid::from_u32(project.pid as u32), command));
         }
 
         if sessions.is_empty() {

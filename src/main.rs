@@ -1,15 +1,12 @@
 use std::time::{Duration, Instant};
 
 use clap::{ArgGroup, Parser};
-use config::WorkerConfig;
 use itertools::Itertools;
-use project::Project;
-
-use crate::project::RunningProject;
-
-pub mod config;
-pub mod libc;
-pub mod project;
+use worker::{
+    ActionArg, ActionArgRunning,
+    config::WorkerConfig,
+    project::{Project, RunningProject},
+};
 
 fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Error> {
     let (running, not_running) = config.partition_projects(projects)?;
@@ -88,16 +85,25 @@ fn list(config: &WorkerConfig, args: ListArgs) -> Result<(), anyhow::Error> {
 }
 
 fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
-    let mut cmd = std::process::Command::new("tail");
-
-    if args.follow {
-        cmd.arg("-f");
-    }
-
-    let mut child = cmd
-        .args(["-n", &args.number.to_string()])
-        .arg(config.log_file(&args.project))
-        .spawn()?;
+    let mut child = if let Some(ref lifecycle) = args.project.lifecycle
+        && let Some(ref logs) = lifecycle.logs
+    {
+        std::process::Command::new(&logs[0])
+            .args(&logs[1..])
+            .args(args.follow.then_some("-f"))
+            .envs(args.project.envs.clone().unwrap_or_default())
+            .current_dir(&args.project.cwd)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .spawn()?
+    } else {
+        std::process::Command::new("tail")
+            .args(["-n", &args.number.to_string()])
+            .args(args.follow.then_some("-f"))
+            .arg(config.log_file(&args.project))
+            .spawn()?
+    };
 
     if args.follow {
         while args.project.is_running() {
@@ -109,18 +115,6 @@ fn logs(config: &WorkerConfig, args: LogsArgs) -> Result<(), anyhow::Error> {
     }
 
     Ok(())
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum ActionArg {
-    Project(Project),
-    Group(Vec<Project>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum ActionArgRunning {
-    Project(RunningProject),
-    Group(Vec<RunningProject>),
 }
 
 #[derive(Debug, Parser)]
