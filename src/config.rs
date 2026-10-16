@@ -1,4 +1,8 @@
-use std::{fs::File, path::PathBuf, str::FromStr};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use anyhow::{Context, anyhow};
 use itertools::{Either, Itertools};
@@ -76,7 +80,7 @@ impl FromStr for ActionArgRunning {
         } else if let Some(project) = config.running()?.find(|it| it.name == s) {
             Ok(ActionArgRunning::Project(project.clone()))
         } else {
-            if let Some(project) = config.projects.into_iter().find(|it| it.name == s) {
+            if let Some(project) = config.projects.iter().find(|it| it.name == s) {
                 println!("{} is not running", project);
             } else {
                 println!("{} is not a project nor a running command", s);
@@ -95,7 +99,13 @@ pub struct WorkerConfig {
 
 impl WorkerConfig {
     pub fn new() -> Result<Self, anyhow::Error> {
-        let base_dir = find_config_dir()?.context("Couldn't find config dir")?;
+        let cwd = std::env::current_dir()?;
+        let base_dir = cwd
+            .ancestors()
+            .find(|dir| dir.join(CONFIG_FILE).exists())
+            .map(Path::to_path_buf)
+            .context("Couldn't find config root")?;
+
         let config_string = std::fs::read_to_string(base_dir.join(CONFIG_FILE))?;
 
         let state_dir = base_dir.join(".worker/state");
@@ -147,7 +157,6 @@ impl WorkerConfig {
                 .ok()?;
 
             if !project.is_running() {
-                let _ = std::fs::remove_file(path);
                 return None;
             }
 
@@ -177,17 +186,30 @@ impl WorkerConfig {
     }
 }
 
-// Scan root directories until we hopefully find the config file
-fn find_config_dir() -> Result<Option<PathBuf>, anyhow::Error> {
-    let mut dir = std::env::current_dir()?;
-    loop {
-        if dir.join(CONFIG_FILE).exists() {
-            return Ok(Some(dir));
-        }
-        if let Some(parent) = dir.parent() {
-            dir = parent.to_path_buf();
-        } else {
-            return Ok(None);
+impl Drop for WorkerConfig {
+    fn drop(&mut self) {
+        let Ok(entries) = std::fs::read_dir(&self.state_dir) else {
+            return;
+        };
+
+        for entry in entries {
+            let Ok(entry) = entry else {
+                continue;
+            };
+
+            let path = entry.path();
+
+            let Ok(contents) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+
+            let Ok(project) = serde_json::from_str::<RunningProject>(&contents) else {
+                continue;
+            };
+
+            if !project.is_running() {
+                let _ = std::fs::remove_file(path);
+            }
         }
     }
 }

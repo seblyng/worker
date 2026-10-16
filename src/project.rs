@@ -275,6 +275,7 @@ impl FromStr for Project {
 
         config
             .projects
+            .clone()
             .into_iter()
             .find(|it| it.name == s)
             .with_context(|| format!("Valid projects are {:#?}", projects))

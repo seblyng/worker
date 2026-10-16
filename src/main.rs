@@ -22,7 +22,7 @@ fn start(config: &WorkerConfig, projects: Vec<Project>) -> Result<(), anyhow::Er
     Ok(())
 }
 
-fn stop(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyhow::Error> {
+fn stop(projects: Vec<RunningProject>) -> Result<(), anyhow::Error> {
     for project in projects.iter() {
         project.stop()?;
     }
@@ -31,14 +31,13 @@ fn stop(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyh
     let start = Instant::now();
 
     while Instant::now().duration_since(start) < timeout {
-        let (still_running, _) = config.partition_projects(projects.clone())?;
-        if still_running.is_empty() {
+        let still_running = projects.iter().filter(|p| p.is_running());
+        if still_running.count() == 0 {
             return Ok(());
         }
     }
 
-    let (still_running, _) = config.partition_projects(projects)?;
-    for p in still_running {
+    for p in projects.iter().filter(|p| p.is_running()) {
         eprintln!("Was not able to stop {}", p);
     }
 
@@ -46,7 +45,7 @@ fn stop(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyh
 }
 
 fn restart(config: &WorkerConfig, projects: Vec<RunningProject>) -> Result<(), anyhow::Error> {
-    stop(config, projects.clone())?;
+    stop(projects.clone())?;
     start(config, projects.into_iter().map(|p| p.into()).collect())?;
 
     Ok(())
@@ -264,7 +263,6 @@ fn main() -> Result<(), anyhow::Error> {
             start(&config, projects)?
         }
         SubCommands::Stop(args) => stop(
-            &config,
             args.projects
                 .into_iter()
                 .flat_map(|it| match it {
