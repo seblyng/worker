@@ -1,58 +1,88 @@
-use common::{WorkerTestConfig, WorkerTestProject};
+use common::WorkerTest;
+use predicates::{boolean::PredicateBooleanExt, prelude::predicate};
 
 mod common;
 
 #[test]
 fn test_status_none_running() {
-    let worker = WorkerTestConfig::new();
-    let mut cmd = worker.status();
-    cmd.assert().success();
-    cmd.assert().stdout("");
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
+            "#,
+            ctx.mock_command("api"),
+        )
+    });
+
+    worker.status().assert().success().stdout("");
 }
 
 #[test]
 fn test_status_one_running() {
-    let worker = WorkerTestConfig::new();
-    let project1 = WorkerTestProject::One;
-    let project2 = WorkerTestProject::Two;
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
 
-    let project1_name = worker.project_name(&project1);
-    let project2_name = worker.project_name(&project2);
+            [[project]]
+            name = "database"
+            command = {}
+            cwd = "/"
+            "#,
+            ctx.mock_command("api"),
+            ctx.mock_command("database"),
+        )
+    });
 
-    let mut cmd = worker.start(&[&project1_name]);
-    cmd.assert().success();
+    worker.start(&["api"]).assert().success();
 
-    let mut cmd = worker.status();
-    cmd.assert().success();
-
-    let output = &cmd.output().unwrap().stdout;
-    let stdout = std::str::from_utf8(output).unwrap();
-
-    assert!(stdout.contains(&project1_name));
-    assert!(!stdout.contains(&project2_name));
+    worker
+        .status()
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api"))
+        .stdout(predicate::str::contains("database").not());
 }
 
 #[test]
 fn test_status_multiple_running() {
-    let worker = WorkerTestConfig::new();
-    let project1 = WorkerTestProject::One;
-    let project2 = WorkerTestProject::Two;
-    let project3 = WorkerTestProject::Three;
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
 
-    let project1_name = worker.project_name(&project1);
-    let project2_name = worker.project_name(&project2);
-    let project3_name = worker.project_name(&project3);
+            [[project]]
+            name = "database"
+            command = {}
+            cwd = "/"
 
-    let mut cmd = worker.start(&[&project1_name, &project2_name]);
-    cmd.assert().success();
+            [[project]]
+            name = "frontend"
+            command = {}
+            cwd = "/"
+            "#,
+            ctx.mock_command("api"),
+            ctx.mock_command("database"),
+            ctx.mock_command("frontend"),
+        )
+    });
 
-    let mut cmd = worker.status();
-    cmd.assert().success();
+    worker.start(&["api", "database"]).assert().success();
 
-    let output = &cmd.output().unwrap().stdout;
-    let stdout = std::str::from_utf8(output).unwrap();
-
-    assert!(stdout.contains(&project1_name));
-    assert!(stdout.contains(&project2_name));
-    assert!(!stdout.contains(&project3_name));
+    worker
+        .status()
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api"))
+        .stdout(predicate::str::contains("database"))
+        .stdout(predicate::str::contains("frontend").not());
 }

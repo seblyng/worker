@@ -1,7 +1,6 @@
 #![allow(dead_code)]
-use std::fs::DirEntry;
 
-use assert_cmd::{cargo::cargo_bin, Command};
+use assert_cmd::{Command, cargo::cargo_bin};
 use serde::Deserialize;
 use sysinfo::{Pid, System};
 use tempfile::TempDir;
@@ -19,110 +18,42 @@ pub enum PidError {
     ParseError,
 }
 
-#[derive(Clone, Copy)]
-pub enum WorkerTestProject {
-    One,
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    GroupOne,
-    GroupTwo,
-    Unknown,
+pub struct TestContext {
+    instance_id: Uuid,
 }
 
-#[derive(Clone, Copy)]
-pub enum WorkerTestGroup {
-    One,
-    Two,
-}
+impl TestContext {
+    /// A TOML command array, unique to this test and project. Not a shell command.
+    pub fn mock_command(&self, project: &str) -> String {
+        let args = vec![
+            cargo_bin("mock").to_string_lossy().into_owned(),
+            self.instance_id.to_string(),
+            project.to_owned(),
+        ];
 
-pub struct WorkerTestConfig {
-    dir: TempDir,
-    cmds: [String; 6],
-    names: [Uuid; 6],
-    groups: [Uuid; 2],
-}
-
-impl Default for WorkerTestConfig {
-    fn default() -> Self {
-        Self::new()
+        toml::Value::Array(args.into_iter().map(toml::Value::String).collect()).to_string()
     }
 }
 
-impl WorkerTestConfig {
-    pub fn new() -> Self {
-        let dir = TempDir::with_prefix(Uuid::new_v4().to_string()).unwrap();
+pub struct WorkerTest {
+    dir: TempDir,
+}
 
-        let mock_path = cargo_bin("mock").to_string_lossy().to_string();
+impl WorkerTest {
+    pub fn with_config(config: impl FnOnce(&TestContext) -> String) -> Self {
+        let dir = TempDir::new().unwrap();
+        let context = TestContext {
+            instance_id: Uuid::new_v4(),
+        };
 
-        let name1 = Uuid::new_v4();
-        let name2 = Uuid::new_v4();
-        let name3 = Uuid::new_v4();
-        let name4 = Uuid::new_v4();
-        let name5 = Uuid::new_v4();
-        let name6 = Uuid::new_v4();
+        // The real CLI discovers, reads, and parses this file on every invocation.
+        std::fs::write(dir.path().join(".worker.toml"), config(&context)).unwrap();
 
-        let group1 = Uuid::new_v4();
-        let group2 = Uuid::new_v4();
+        Self { dir }
+    }
 
-        let cmd1 = format!("{} {}", mock_path, name1);
-        let cmd2 = format!("{} {}", mock_path, name2);
-        let cmd3 = format!("{} {}", mock_path, name3);
-        let cmd4 = format!("{} {}", mock_path, name5);
-        let cmd_echo = "echo 'Hello from test!'".to_string();
-
-        // Create the .worker.toml file
-        std::fs::write(
-            dir.path().join(".worker.toml"),
-            format!(
-                r#"
-            [[project]]
-            name = "{name1}"
-            command = ["{mock_path}", "{name1}"]
-            cwd = "/"
-            group = ["{group1}", "{group2}"]
-
-            [[project]]
-            name = "{name2}"
-            command = ["{mock_path}", "{name2}"]
-            cwd = "/"
-            group = [ "{group1}" ]
-
-            [[project]]
-            name = "{name3}"
-            command = ["{mock_path}", "{name3}"]
-            cwd = "/"
-            group = [ "{group2}" ]
-
-            [[project]]
-            name = "{name4}"
-            command = ["sh", "-c", "{cmd_echo}"]
-            cwd = "/"
-
-            [[project]]
-            name = "{name5}"
-            command = ["{mock_path}", "{name5}"]
-            cwd = "/"
-            dependencies = ["{name1}", "{name2}"]
-
-            [[project]]
-            name = "{name6}"
-            command = ["sh", "-c", "{cmd_echo}"]
-            cwd = "/"
-            dependencies = ["{name1}", "{name2}"]
-            "#
-            ),
-        )
-        .unwrap();
-
-        WorkerTestConfig {
-            dir,
-            cmds: [cmd1, cmd2, cmd3, cmd_echo.clone(), cmd4, cmd_echo],
-            names: [name1, name2, name3, name4, name5, name6],
-            groups: [group1, group2],
-        }
+    pub fn default() -> Self {
+        Self::with_config(|_| "project = []".into())
     }
 
     fn run_cmd(&self, command: &str, projects: Option<&[&str]>) -> Command {
@@ -164,61 +95,44 @@ impl WorkerTestConfig {
         self.run_cmd("status", None)
     }
 
-    // Depends on `new()`. Used for asserting that the projects have actually started
-    pub fn group_projects(&self, group: &WorkerTestProject) -> &[WorkerTestProject; 2] {
-        match group {
-            WorkerTestProject::GroupOne => &[WorkerTestProject::One, WorkerTestProject::Two],
-            WorkerTestProject::GroupTwo => &[WorkerTestProject::Two, WorkerTestProject::Three],
-            WorkerTestProject::One => unreachable!(),
-            WorkerTestProject::Two => unreachable!(),
-            WorkerTestProject::Three => unreachable!(),
-            WorkerTestProject::Four => unreachable!(),
-            WorkerTestProject::Five => unreachable!(),
-            WorkerTestProject::Six => unreachable!(),
-            WorkerTestProject::Unknown => unreachable!(),
-        }
-    }
-
-    fn state_file(&self, name: &str) -> Option<DirEntry> {
-        let dir = self.dir.path().join(".worker/state").read_dir().ok()?;
-
-        for entry in dir.into_iter() {
-            let entry = entry.unwrap();
-            if entry.file_name().to_string_lossy().contains(name) {
-                return Some(entry);
-            }
-        }
-
-        None
-    }
-
-    pub fn project_name(&self, project: &WorkerTestProject) -> String {
-        match project {
-            WorkerTestProject::One => self.names[0].to_string(),
-            WorkerTestProject::Two => self.names[1].to_string(),
-            WorkerTestProject::Three => self.names[2].to_string(),
-            WorkerTestProject::Four => self.names[3].to_string(),
-            WorkerTestProject::Five => self.names[4].to_string(),
-            WorkerTestProject::Six => self.names[5].to_string(),
-            WorkerTestProject::Unknown => "unknown".into(),
-            WorkerTestProject::GroupOne => self.groups[0].to_string(),
-            WorkerTestProject::GroupTwo => self.groups[1].to_string(),
-        }
-    }
-
     pub fn pids(&self, name: &str) -> Result<Vec<Pid>, PidError> {
-        let state_file = self.state_file(name).ok_or(PidError::FileNotFound)?;
+        let path = self.dir.path().join(".worker/state");
+        let dir = path.read_dir().map_err(|_| PidError::FileNotFound)?;
 
-        let project =
-            std::fs::read_to_string(state_file.path()).map_err(|_| PidError::FileNotFound)?;
-        let project =
-            serde_json::from_str::<Project>(&project).map_err(|_| PidError::ParseError)?;
+        let mut sessions = Vec::new();
+        for entry in dir {
+            let entry = entry.unwrap();
+            if !entry
+                .file_name()
+                .to_string_lossy()
+                .rsplit_once('-')
+                .is_some_and(|(project, _)| project == name)
+            {
+                continue;
+            }
+            let state_file = entry;
 
-        let cmd = project
-            .command
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>();
+            let filename = state_file.file_name();
+            let filename = filename.to_string_lossy();
+            let (_, session_id) = filename.rsplit_once('-').ok_or(PidError::ParseError)?;
+            let session_id = session_id
+                .parse::<u32>()
+                .map_err(|_| PidError::ParseError)?;
+            let project =
+                std::fs::read_to_string(state_file.path()).map_err(|_| PidError::FileNotFound)?;
+            let project =
+                serde_json::from_str::<Project>(&project).map_err(|_| PidError::ParseError)?;
+            let command = project
+                .command
+                .into_iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>();
+            sessions.push((Pid::from_u32(session_id), command));
+        }
+
+        if sessions.is_empty() {
+            return Err(PidError::FileNotFound);
+        }
 
         // HACK: Seems like I unfortunately need to sleep a bit here to make the tests less flaky
         // Seems like they need some time before they are recognized as processes.
@@ -227,7 +141,12 @@ impl WorkerTestConfig {
         Ok(System::new_all()
             .processes()
             .values()
-            .filter_map(|p| if p.cmd() == cmd { Some(p.pid()) } else { None })
+            .filter(|p| {
+                sessions.iter().any(|(session_id, command)| {
+                    p.session_id() == Some(*session_id) && p.cmd() == command.as_slice()
+                })
+            })
+            .map(|p| p.pid())
             .collect())
     }
 }

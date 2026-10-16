@@ -1,65 +1,85 @@
-use common::{WorkerTestConfig, WorkerTestProject};
-use uuid::Uuid;
-
-use crate::common::PidError;
+use common::{PidError, WorkerTest};
 
 mod common;
 
 #[test]
 fn test_run_project() {
-    let worker = WorkerTestConfig::new();
-    let project = WorkerTestProject::Four;
+    let worker = WorkerTest::with_config(|_| {
+        r#"
+        [[project]]
+        name = "greet"
+        command = ["sh", "-c", "echo 'Hello from test!'"]
+        cwd = "/"
+        "#
+        .into()
+    });
 
-    let project_name = worker.project_name(&project);
+    worker
+        .run(&["greet"])
+        .assert()
+        .success()
+        .stdout("Hello from test!\n");
 
-    let mut cmd = worker.run(&[&project_name]);
-    cmd.assert().success().stdout("Hello from test!\n");
-
-    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project_name));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids("greet"));
 }
 
 #[test]
 fn test_run_project_starts_dependencies() {
-    let worker = WorkerTestConfig::new();
-    let project = WorkerTestProject::Six;
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "database"
+            command = {}
+            cwd = "/"
 
-    let dep1 = WorkerTestProject::One;
-    let dep2 = WorkerTestProject::Two;
+            [[project]]
+            name = "cache"
+            command = {}
+            cwd = "/"
 
-    let project_name = worker.project_name(&project);
-    let dep1_name = worker.project_name(&dep1);
-    let dep2_name = worker.project_name(&dep2);
+            [[project]]
+            name = "greet"
+            command = ["sh", "-c", "echo 'Hello from test!'"]
+            cwd = "/"
+            dependencies = ["database", "cache"]
+            "#,
+            ctx.mock_command("database"),
+            ctx.mock_command("cache"),
+        )
+    });
 
-    let mut cmd = worker.run(&[&project_name]);
-    cmd.assert().stdout("Hello from test!\n");
+    worker
+        .run(&["greet"])
+        .assert()
+        .success()
+        .stdout("Hello from test!\n");
 
-    assert_eq!(Err(PidError::FileNotFound), worker.pids(&project_name));
-    assert_eq!(worker.pids(&dep1_name).unwrap().len(), 1);
-    assert_eq!(worker.pids(&dep2_name).unwrap().len(), 1);
+    assert_eq!(Err(PidError::FileNotFound), worker.pids("greet"));
+    assert_eq!(worker.pids("database").unwrap().len(), 1);
+    assert_eq!(worker.pids("cache").unwrap().len(), 1);
 }
 
 #[test]
 fn test_run_command_success() {
-    let worker = WorkerTestConfig::new();
+    let worker = WorkerTest::default();
 
-    let uuid = Uuid::new_v4();
-    let echo_cmd = format!("echo 'Hello from {}!'", uuid);
+    worker
+        .run(&["-n", "api", "-c", "echo 'Hello from api!'"])
+        .assert()
+        .success();
 
-    let mut cmd = worker.run(&["-n", &uuid.to_string(), "-c", &echo_cmd]);
-    cmd.assert().success();
-
-    assert_eq!(Err(PidError::FileNotFound), worker.pids(&uuid.to_string()));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids("api"));
 }
 
 #[test]
 fn test_run_command_require_name() {
-    let worker = WorkerTestConfig::new();
+    let worker = WorkerTest::default();
 
-    let uuid = Uuid::new_v4();
-    let echo_cmd = format!("echo 'Hello from {}!'", uuid);
+    worker
+        .run(&["-c", "echo 'Hello from api!'"])
+        .assert()
+        .failure();
 
-    let mut cmd = worker.start(&["-c", &echo_cmd]);
-    cmd.assert().failure();
-
-    assert_eq!(Err(PidError::FileNotFound), worker.pids(&uuid.to_string()));
+    assert_eq!(Err(PidError::FileNotFound), worker.pids("api"));
 }

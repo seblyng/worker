@@ -1,20 +1,39 @@
-use common::{WorkerTestConfig, WorkerTestProject};
+use common::WorkerTest;
 use predicates::prelude::predicate;
 
 mod common;
 
 #[test]
 fn test_list_projects() {
-    let worker = WorkerTestConfig::new();
-    let mut cmd = worker.list();
+    let worker = WorkerTest::with_config(|ctx| {
+        format!(
+            r#"
+            [[project]]
+            name = "api"
+            command = {}
+            cwd = "/"
 
-    let project1_name = worker.project_name(&WorkerTestProject::One);
-    let project2_name = worker.project_name(&WorkerTestProject::Two);
-    let project3_name = worker.project_name(&WorkerTestProject::Three);
+            [[project]]
+            name = "database"
+            command = {}
+            cwd = "/"
 
-    cmd.assert()
+            [[project]]
+            name = "frontend"
+            command = {}
+            cwd = "/"
+            "#,
+            ctx.mock_command("api"),
+            ctx.mock_command("database"),
+            ctx.mock_command("frontend"),
+        )
+    });
+
+    worker
+        .list()
+        .assert()
         .success()
-        .stdout(predicate::str::contains(project1_name))
-        .stdout(predicate::str::contains(project2_name))
-        .stdout(predicate::str::contains(project3_name));
+        .stdout(predicate::str::contains("api"))
+        .stdout(predicate::str::contains("database"))
+        .stdout(predicate::str::contains("frontend"));
 }

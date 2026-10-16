@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use clap::{command, ArgGroup, Parser};
+use clap::{ArgGroup, Parser};
 use config::WorkerConfig;
 use itertools::Itertools;
 use project::Project;
